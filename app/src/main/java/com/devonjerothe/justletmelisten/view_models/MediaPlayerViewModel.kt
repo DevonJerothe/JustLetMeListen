@@ -2,6 +2,7 @@ package com.devonjerothe.justletmelisten.view_models
 
 import android.app.Application
 import android.content.ComponentName
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.net.URI
 
 sealed interface MediaPlayerUIState {
     data object NoMedia : MediaPlayerUIState
@@ -59,6 +61,7 @@ class MediaPlayerViewModel(
 
     private var mediaController: MediaController? = null
     private var progressJob: Job? = null
+    private var saveJob: Job? = null
 
     init {
         val session = SessionToken(app, ComponentName(app, MediaService::class.java))
@@ -84,8 +87,10 @@ class MediaPlayerViewModel(
 
                 if (isPlaying) {
                     startProgressJob()
+                    startSaveJob()
                 } else {
                     stopProgressJob()
+                    stopSaveJob()
                 }
             }
 
@@ -148,6 +153,20 @@ class MediaPlayerViewModel(
         progressJob?.cancel()
     }
 
+    private fun startSaveJob() {
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            while (isActive) {
+                delay(15000)
+                updateEpisode()
+            }
+        }
+    }
+
+    private fun stopSaveJob() {
+        saveJob?.cancel()
+    }
+
     fun onPlayPause() {
         if (mediaController?.isPlaying == true) {
             mediaController?.pause()
@@ -174,6 +193,7 @@ class MediaPlayerViewModel(
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(episode.title ?: "")
+                    .setArtworkUri(episode.imageUrl?.toUri())
                     .build()
             )
             .build()
@@ -191,11 +211,10 @@ class MediaPlayerViewModel(
     }
 
     fun closePlayer() {
-        mediaController?.stop()
-        mediaController?.clearMediaItems()
-
         updateEpisode()
 
+        mediaController?.stop()
+        mediaController?.clearMediaItems()
         _uiState.value = NoMedia
     }
 
@@ -205,6 +224,7 @@ class MediaPlayerViewModel(
         super.onCleared()
         mediaController?.release()
         stopProgressJob()
+        stopSaveJob()
     }
 
     private fun updateEpisode() {
