@@ -2,7 +2,6 @@ package com.devonjerothe.justletmelisten.view_models
 
 import android.app.Application
 import android.content.ComponentName
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -11,14 +10,16 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.devonjerothe.justletmelisten.network.Episode
+import com.devonjerothe.justletmelisten.repos.PodcastRepo
 import com.devonjerothe.justletmelisten.view_models.MediaPlayerUIState.*
-import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -34,10 +35,27 @@ sealed interface MediaPlayerUIState {
 }
 
 class MediaPlayerViewModel(
-    app: Application
+    app: Application,
+    private val podcastRepo: PodcastRepo
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<MediaPlayerUIState>(NoMedia)
     val uiState: StateFlow<MediaPlayerUIState> = _uiState.asStateFlow()
+
+    val playingEpisode: Flow<Episode?> = _uiState.map { state ->
+        if (state is HasMedia) {
+            state.currentEpisode
+        } else {
+            null
+        }
+    }
+    val paused: Flow<Boolean> = _uiState.map { state ->
+        if (state is HasMedia) {
+            state.paused
+        } else {
+            false
+        }
+    }
+    var continueFrom: Float? = null
 
     private var mediaController: MediaController? = null
     private var progressJob: Job? = null
@@ -57,6 +75,7 @@ class MediaPlayerViewModel(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _uiState.update { state ->
                     if (state is HasMedia) {
+                        updateEpisode()
                         state.copy(paused = !isPlaying)
                     } else {
                         state
@@ -71,6 +90,17 @@ class MediaPlayerViewModel(
             }
 
             override fun onEvents(player: Player, events: Player.Events) {
+
+                if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_READY) {
+                    val state = _uiState.value
+                    if (state is HasMedia) {
+                        continueFrom?.let {
+                            player.seekTo((it * 1000f).toLong())
+                            continueFrom = null
+                        }
+                    }
+                }
+
                 if (events.containsAny(Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_MEDIA_METADATA_CHANGED)) {
                     _uiState.update { state ->
                         if (state is HasMedia) {
@@ -84,6 +114,15 @@ class MediaPlayerViewModel(
                 }
             }
         })
+
+        // fetch last played episode
+        // TODO: This will make it so that last played always opens given the user listens to a lot.. do we want that?
+        viewModelScope.launch {
+            val lastPlayed = podcastRepo.getLastPlayedEpisode()
+            lastPlayed?.let {
+                playEpisode(lastPlayed, true)
+            }
+        }
     }
 
     private fun startProgressJob() {
@@ -117,12 +156,17 @@ class MediaPlayerViewModel(
         }
     }
 
-    fun playEpisode(episode: Episode) {
+    fun playEpisode(episode: Episode, startPause: Boolean = false) {
         if (mediaController == null) return
 
         _uiState.value = HasMedia(
-            currentEpisode = episode
+            currentEpisode = episode,
+            progress = episode.progress,
+            paused = startPause
         )
+
+        updateEpisode()
+        continueFrom = episode.progress
 
         val mediaItem = MediaItem.Builder()
             .setMediaId(episode.id.toString())
@@ -136,7 +180,10 @@ class MediaPlayerViewModel(
 
         mediaController?.setMediaItem(mediaItem)
         mediaController?.prepare()
-        mediaController?.play()
+
+        if (!startPause) {
+            mediaController?.play()
+        }
     }
 
     fun seakTo(position: Float) {
@@ -146,12 +193,31 @@ class MediaPlayerViewModel(
     fun closePlayer() {
         mediaController?.stop()
         mediaController?.clearMediaItems()
+
+        updateEpisode()
+
         _uiState.value = NoMedia
     }
 
     override fun onCleared() {
+        updateEpisode()
+
         super.onCleared()
         mediaController?.release()
         stopProgressJob()
+    }
+
+    private fun updateEpisode() {
+        val state = _uiState.value
+        if (state is HasMedia) {
+            val episode = state.currentEpisode.copy(
+                progress = state.progress,
+                lastPlayed = System.currentTimeMillis()
+            )
+
+            viewModelScope.launch {
+                podcastRepo.updateEpisode(episode)
+            }
+        }
     }
 }

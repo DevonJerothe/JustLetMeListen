@@ -30,6 +30,14 @@ class PodcastRepo(
         return podcastDao.getPodcastById(podcastId)
     }
 
+    suspend fun updateEpisode(episode: Episode) {
+        episodeDao.upsertAll(listOf(episode))
+    }
+
+    suspend fun getLastPlayedEpisode(): Episode? {
+        return episodeDao.getLastPlayedEpisode()
+    }
+
     suspend fun getPodcastByTrack(trackId: Long): Podcast? {
         return podcastDao.getPodcastByTrackId(trackId)
     }

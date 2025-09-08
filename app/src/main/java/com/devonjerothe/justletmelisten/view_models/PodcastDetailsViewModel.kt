@@ -11,9 +11,13 @@ import com.devonjerothe.justletmelisten.network.Podcast
 import com.devonjerothe.justletmelisten.network.PodcastWithEpisodes
 import com.devonjerothe.justletmelisten.repos.PodcastRepo
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -36,6 +40,7 @@ class PodcastDetailsViewModel(
     private val feedUrl = savedStateHandle.get<String>(FEED_URL)?.let { encodedUrl ->
         URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
     }
+
     private val trackId = savedStateHandle.get<Long>(TRACK_ID)
     private var dbObserver: Job? = null
 
@@ -49,6 +54,9 @@ class PodcastDetailsViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = PodcastDetailsUIState.Loading
         )
+
+    val activeEpisode: Flow<Episode?> = mediaPlayer.playingEpisode
+    val paused: Flow<Boolean> = mediaPlayer.paused
 
     fun loadDetails(useCache: PodcastWithEpisodes? = null, skipLoading: Boolean = false) {
         dbObserver?.cancel()
@@ -142,7 +150,11 @@ class PodcastDetailsViewModel(
         }
     }
 
-    fun playEpisode(episode: Episode) {
-        mediaPlayer.playEpisode(episode)
+    fun playEpisode(episode: Episode, activeId: Long? = null) {
+        if (activeId == episode.id) {
+            mediaPlayer.onPlayPause()
+        } else {
+            mediaPlayer.playEpisode(episode)
+        }
     }
 }

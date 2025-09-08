@@ -2,11 +2,13 @@ package com.devonjerothe.justletmelisten.views
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -15,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,19 +41,25 @@ import com.devonjerothe.justletmelisten.view_models.PodcastViewModel
 @Composable
 fun HomeScreen(
     navController: NavigationController,
-    viewModel: PodcastViewModel
+    viewModel: PodcastViewModel,
+    bottomPadding: PaddingValues
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("My Podcasts") }) },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                navController.navigateToSearch()
-            }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Podcast")
+            Box(
+                modifier = Modifier.offset(y = -bottomPadding.calculateBottomPadding())
+            ) {
+                FloatingActionButton(onClick = {
+                    navController.navigateToSearch()
+                }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Podcast")
+                }
             }
-        }
+        },
+        floatingActionButtonPosition = FabPosition.End
     ) { paddingValues ->
         if (uiState.podcasts.isEmpty()) {
             Column(
@@ -69,7 +78,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = bottomPadding,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {

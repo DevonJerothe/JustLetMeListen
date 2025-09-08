@@ -55,7 +55,8 @@ import com.devonjerothe.justletmelisten.view_models.SearchPodcastUIState
 @Composable
 fun SearchScreen(
     navController: NavigationController,
-    viewModel: PodcastSearchViewModel
+    viewModel: PodcastSearchViewModel,
+    bottomPadding: PaddingValues
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
@@ -94,7 +95,7 @@ fun SearchScreen(
                 is SearchPodcastUIState.Success -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = bottomPadding,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         item {

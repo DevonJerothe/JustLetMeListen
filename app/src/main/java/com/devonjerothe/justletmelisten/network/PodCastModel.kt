@@ -52,7 +52,10 @@ data class Podcast(
 
 @Entity(
     tableName = "episodes",
-    indices = [Index("podcast_id")],
+    indices = [
+        Index("last_played"),
+        Index("podcast_id"),
+        Index("guid", unique = true)],
     foreignKeys = [
         ForeignKey(
             entity = Podcast::class,
@@ -71,6 +74,12 @@ data class Episode(
 
     @ColumnInfo(name = "podcast_id")
     var podcastId: Long,
+
+    @ColumnInfo(name = "last_played")
+    var lastPlayed: Long? = null,
+
+    @ColumnInfo(name = "progress")
+    var progress: Float = 0f,
 
     @ColumnInfo(name = "title")
     val title: String?,

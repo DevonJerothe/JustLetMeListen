@@ -5,6 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,6 +85,10 @@ fun PodcastApp() {
 
     val playerState by mediaPlayer.uiState.collectAsState()
     val playerHeight = if (playerState is MediaPlayerUIState.NoMedia) 0.dp else 150.dp
+    val bottomPadding by animateDpAsState(
+        targetValue = if (playerState is MediaPlayerUIState.NoMedia) 16.dp else 150.dp,
+        label = "bottomPadding"
+    )
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
@@ -105,13 +111,15 @@ fun PodcastApp() {
                 composable(HOME) {
                     HomeScreen(
                         navController = navigationController,
-                        viewModel = koinViewModel()
+                        viewModel = koinViewModel(),
+                        bottomPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomPadding)
                     )
                 }
                 composable(SEARCH_PODCASTS) {
                     SearchScreen(
                         navController = navigationController,
-                        viewModel = koinViewModel()
+                        viewModel = koinViewModel(),
+                        bottomPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomPadding)
                     )
                 }
                 composable(
@@ -126,7 +134,8 @@ fun PodcastApp() {
                 ) {
                     PodcastDetailsScreen(
                         navController = navigationController,
-                        viewModel = koinViewModel()
+                        viewModel = koinViewModel(),
+                        bottomPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomPadding)
                     )
                 }
                 composable(
@@ -146,7 +155,8 @@ fun PodcastApp() {
                 ) {
                     PodcastDetailsScreen(
                         navController = navigationController,
-                        viewModel = koinViewModel()
+                        viewModel = koinViewModel(),
+                        bottomPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomPadding)
                     )
                 }
             }

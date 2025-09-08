@@ -47,7 +47,10 @@ val serviceContainer = module {
 
     // Media Player
     single {
-        MediaPlayerViewModel(androidApplication())
+        MediaPlayerViewModel(
+            androidApplication(),
+            podcastRepo = get()
+        )
     }
 
     // ViewModels

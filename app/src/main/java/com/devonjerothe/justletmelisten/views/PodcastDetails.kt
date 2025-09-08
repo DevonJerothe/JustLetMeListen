@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,26 +37,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.devonjerothe.justletmelisten.NavigationController
+import com.devonjerothe.justletmelisten.R
 import com.devonjerothe.justletmelisten.network.Episode
 import com.devonjerothe.justletmelisten.network.Podcast
 import com.devonjerothe.justletmelisten.view_models.PodcastDetailsUIState
 import com.devonjerothe.justletmelisten.view_models.PodcastDetailsViewModel
 import com.devonjerothe.justletmelisten.views.shared.ExpandingText
 import com.devonjerothe.justletmelisten.views.shared.formatTime
+import kotlinx.coroutines.flow.map
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PodcastDetailsScreen(
     navController: NavigationController,
-    viewModel: PodcastDetailsViewModel = koinViewModel()
+    viewModel: PodcastDetailsViewModel = koinViewModel(),
+    bottomPadding: PaddingValues
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val activeEpisode by viewModel.activeEpisode
+        .map { episode ->
+            episode?.id
+        }
+        .collectAsStateWithLifecycle(null)
+    val paused by viewModel.paused
+        .collectAsStateWithLifecycle(false)
 
     Scaffold(
         topBar = {
@@ -94,8 +107,13 @@ fun PodcastDetailsScreen(
                             }
                         },
                         onPlay = { episode ->
-                            viewModel.playEpisode(episode)
-                        }
+                            viewModel.playEpisode(episode, activeEpisode)
+                        },
+                        isActive = { episodeId ->
+                            activeEpisode == episodeId
+                        },
+                        paused = paused,
+                        bottomPadding = bottomPadding
                     )
                 }
                 is PodcastDetailsUIState.Error -> {
@@ -116,11 +134,14 @@ fun PodcastDetailsContent(
     podcast: Podcast,
     episodes: List<Episode>,
     onClick: () -> Unit = {},
-    onPlay: (Episode) -> Unit = {}
+    onPlay: (Episode) -> Unit = {},
+    isActive: (Long) -> Boolean = { false },
+    paused: Boolean = false,
+    bottomPadding: PaddingValues
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp),
+        contentPadding = bottomPadding,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         item {
@@ -177,16 +198,24 @@ fun PodcastDetailsContent(
         }
 
         items(episodes) { episode ->
-            EpisodeRow(episode) {
-                onPlay(episode)
-            }
+            EpisodeRow(
+                episode,
+                onPlay = onPlay,
+                isActive = isActive,
+                paused = paused
+            )
             HorizontalDivider()
         }
     }
 }
 
 @Composable
-fun EpisodeRow(episode: Episode, onPlay: (Episode) -> Unit) {
+fun EpisodeRow(
+    episode: Episode,
+    onPlay: (Episode) -> Unit,
+    isActive: (Long) -> Boolean = { false },
+    paused: Boolean = false
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -212,8 +241,10 @@ fun EpisodeRow(episode: Episode, onPlay: (Episode) -> Unit) {
         IconButton(
             onClick = { onPlay(episode) }
         ) {
+            val icon = if (!paused && isActive(episode.id)) R.drawable.pause_24px else R.drawable.play_arrow_24px
+
             Icon(
-                imageVector = Icons.Default.PlayArrow,
+                painter = painterResource(icon),
                 contentDescription = "Play",
                 modifier = Modifier.size(32.dp)
             )
