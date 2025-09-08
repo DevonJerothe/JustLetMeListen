@@ -22,8 +22,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +42,7 @@ import com.devonjerothe.justletmelisten.network.Episode
 import com.devonjerothe.justletmelisten.view_models.MediaPlayerUIState
 import com.devonjerothe.justletmelisten.view_models.MediaPlayerViewModel
 import com.devonjerothe.justletmelisten.R
+import com.devonjerothe.justletmelisten.views.shared.formatTime
 
 @Composable
 fun MediaPlayer(
@@ -45,24 +50,47 @@ fun MediaPlayer(
     isExpanded: Boolean
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var isDragging by remember { mutableStateOf(false) }
 
     if (uiState is MediaPlayerUIState.HasMedia) {
         val state = uiState as MediaPlayerUIState.HasMedia
+        var sliderPosition by remember { mutableStateOf(state.progress) }
+
+        LaunchedEffect(state.progress) {
+            if (!isDragging) {
+                sliderPosition = state.progress
+            }
+        }
 
         Crossfade(targetState = isExpanded, label = "MediaPlayer") { expanded ->
             if (expanded) {
                 MediaPlayerView(
                     episode = state.currentEpisode,
-                    progress = state.progress,
+                    progress = sliderPosition,
+                    duration = state.duration,
                     paused = state.paused,
-                    onCollapse = viewModel::closePlayer,
-                    onPlayPause = viewModel::onPlayPause
+                    onSeek = { newPos ->
+                        viewModel.seakTo(newPos)
+                    },
+                    onPlayPause = viewModel::onPlayPause,
+                    onValueChange = { newPos ->
+                        isDragging = true
+                        sliderPosition = newPos
+                    },
+                    onValueChangeFinished = {
+                        viewModel.seakTo(sliderPosition)
+                        isDragging = false
+                    }
                 )
             } else {
                 MediaPlayerViewCollapsed(
                     episode = state.currentEpisode,
                     progress = state.progress,
+                    duration = state.duration, // Added duration here
                     paused = state.paused,
+                    onSeek = { newPos ->
+                        viewModel.seakTo(newPos)
+                    },
                     onPlayPause = viewModel::onPlayPause
                 )
             }
@@ -74,9 +102,12 @@ fun MediaPlayer(
 fun MediaPlayerView(
     episode: Episode,
     progress: Float,
+    duration: Float,
     paused: Boolean = false,
-    onCollapse: () -> Unit = {},
-    onPlayPause: () -> Unit = {}
+    onSeek: (Float) -> Unit = {},
+    onPlayPause: () -> Unit = {},
+    onValueChange: (Float) -> Unit = {},
+    onValueChangeFinished: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -84,23 +115,6 @@ fun MediaPlayerView(
             .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // TopBar
-//        Row(
-//            modifier = Modifier.fillMaxWidth(),
-//            verticalAlignment = Alignment.CenterVertically
-//        ) {
-//            IconButton(onClick = onCollapse ) {
-//                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "collapse")
-//            }
-//            Text(
-//                text = "Now Playing",
-//                modifier = Modifier.weight(1f),
-//                textAlign = TextAlign.Center,
-//                style = MaterialTheme.typography.bodySmall
-//            )
-//            // TODO: Add more butt - favorite, download, etc
-//        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
         AsyncImage(
@@ -129,14 +143,14 @@ fun MediaPlayerView(
             overflow = TextOverflow.Ellipsis,
         )
 
-        Spacer(modifier = Modifier.height(64.dp))
+        Spacer(modifier = Modifier.weight(1f))
 
         // Media Controls
         Slider(
             value = progress,
-            onValueChange = {
-                // TODO: Handle progress change
-            },
+            valueRange = 0f..duration,
+            onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
             modifier = Modifier.fillMaxWidth()
         )
         Row(
@@ -144,12 +158,11 @@ fun MediaPlayerView(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = progress.toString(),
+                text = formatTime(progress),
                 style = MaterialTheme.typography.bodySmall
             )
-            // TODO: handle duration
             Text(
-                text = progress.toString(),
+                text = formatTime(duration),
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -162,7 +175,10 @@ fun MediaPlayerView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // rewind
-            IconButton(onClick = {  }) {
+            IconButton(onClick = {
+                val newPos = progress - 30f
+                onSeek(newPos.coerceAtLeast(0f))
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.replay_30_24px),
                     contentDescription = "Play/Pause",
@@ -183,8 +199,10 @@ fun MediaPlayerView(
                 )
             }
 
-            // rewind
-            IconButton(onClick = {  }) {
+            IconButton(onClick = {
+                val newPos = progress + 30f
+                onSeek(newPos.coerceAtMost(duration))
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.forward_30_24px),
                     contentDescription = "Play/Pause",
@@ -193,7 +211,7 @@ fun MediaPlayerView(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.weight(1f))
     }
 }
 
@@ -201,7 +219,9 @@ fun MediaPlayerView(
 fun MediaPlayerViewCollapsed(
     episode: Episode,
     progress: Float,
+    duration: Float, // Added duration parameter
     paused: Boolean = false,
+    onSeek: (Float) -> Unit = {},
     onPlayPause: () -> Unit
 ) {
     Row(
@@ -239,7 +259,10 @@ fun MediaPlayerViewCollapsed(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // rewind
-                IconButton(onClick = {  }) {
+                IconButton(onClick = {
+                    val newPos = progress - 30f
+                    onSeek(newPos.coerceAtLeast(0f))
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.replay_30_24px),
                         contentDescription = "Play/Pause",
@@ -258,7 +281,10 @@ fun MediaPlayerViewCollapsed(
                 }
 
                 // rewind
-                IconButton(onClick = {  }) {
+                IconButton(onClick = {
+                    val newPos = progress + 30f
+                    onSeek(newPos.coerceAtMost(duration)) // Changed progress to duration
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.forward_30_24px),
                         contentDescription = "Play/Pause",

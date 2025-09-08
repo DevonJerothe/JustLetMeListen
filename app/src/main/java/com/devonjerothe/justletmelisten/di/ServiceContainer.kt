@@ -9,6 +9,7 @@ import com.devonjerothe.justletmelisten.view_models.MediaPlayerViewModel
 import com.devonjerothe.justletmelisten.view_models.PodcastDetailsViewModel
 import com.devonjerothe.justletmelisten.view_models.PodcastSearchViewModel
 import com.devonjerothe.justletmelisten.view_models.PodcastViewModel
+import org.koin.android.ext.koin.androidApplication
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -46,7 +47,7 @@ val serviceContainer = module {
 
     // Media Player
     single {
-        MediaPlayerViewModel()
+        MediaPlayerViewModel(androidApplication())
     }
 
     // ViewModels

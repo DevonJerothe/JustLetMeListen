@@ -1,5 +1,6 @@
 package com.devonjerothe.justletmelisten.repos
 
+import androidx.core.text.HtmlCompat
 import com.devonjerothe.justletmelisten.network.ApiResult
 import com.devonjerothe.justletmelisten.network.ApiService
 import com.devonjerothe.justletmelisten.network.Episode
@@ -64,7 +65,7 @@ class PodcastRepo(
         val podcast = podcastDao.getPodcastById(podcastId)
 
         val feedUrl = podcast?.feedUrl ?: return podcastDao.observePodcastWithEpisodes(podcastId)
-        val response = apiService.getPodcastEpisodes(feedUrl, podcast.etag)
+        val response = apiService.getPodcastEpisodes(feedUrl, podcast.etag, podcast.lastModified)
 
         when (response) {
             is RssResult.Success -> {
@@ -73,7 +74,8 @@ class PodcastRepo(
                 // store or update the podcast item with new etag
                 // this is needed for proper caching
                 val updatePodcast = podcast.copy(
-                    etag = response.etag
+                    etag = response.etag,
+                    lastModified = response.lastModified
                 )
 
                 // map each item to Episode
@@ -114,13 +116,15 @@ class PodcastRepo(
             is RssResult.Success -> {
                 val episodes = response.channel.items
 
+                val image = response.channel.image?.url ?: response.channel.itunesChannelData?.image
                 val podcast = Podcast(
                     trackId = trackId,
                     etag = response.etag,
+                    lastModified = response.lastModified,
                     link = response.channel.link,
                     title = response.channel.title,
                     description = response.channel.description,
-                    imageUrl = response.channel.image?.url,
+                    imageUrl = image,
                     feedUrl = feedUrl,
                     category = response.channel.itunesChannelData?.categories?.firstOrNull()
                 )
@@ -132,10 +136,10 @@ class PodcastRepo(
                         guid = item.guid,
                         podcastId = podcast.id,
                         title = item.title,
-                        description = item.description,
+                        description = stripHtml(item.description),
                         imageUrl = image,
                         audioUrl = item.rawEnclosure?.url,
-                        duration = item.itunesItemData?.duration?.toLongOrNull(),
+                        duration = parseDuration(item.itunesItemData?.duration),
                         pubDate = toDisplayDate(item.pubDate ?: "")
                     )
                 }
@@ -157,6 +161,30 @@ class PodcastRepo(
     }
 
     // Helper Functions
+    private fun parseDuration(duration: String?): Long {
+        if (duration.isNullOrBlank()) return 0L
+
+        val asSeconds = duration.toLongOrNull()
+        if (asSeconds != null) return asSeconds
+
+        try {
+            val parts = duration.split(":").map { it.toLong() }.reversed()
+            var totalSeconds = 0L
+            if (parts.isNotEmpty()) totalSeconds += parts[0]
+            if (parts.size > 1) totalSeconds += parts[1] * 60
+            if (parts.size > 2) totalSeconds += parts[2] * 3600
+            return totalSeconds
+        } catch (e: Exception) {
+            return 0L
+        }
+    }
+
+    fun stripHtml(html: String?): String {
+        if (html.isNullOrBlank()) return ""
+        val spanned = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_LEGACY)
+        return spanned.toString()
+    }
+
     private fun parseDate(dateString: String): Long? {
         return try {
             // Example format: Mon, 01 Sep 2025 14:45:00 +0000

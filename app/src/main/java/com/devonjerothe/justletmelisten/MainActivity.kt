@@ -1,5 +1,6 @@
 package com.devonjerothe.justletmelisten
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,6 +32,7 @@ import com.devonjerothe.justletmelisten.destinations.SEARCH_PODCASTS
 import com.devonjerothe.justletmelisten.ui.theme.JustLetMeListenTheme
 import com.devonjerothe.justletmelisten.view_models.MediaPlayerUIState
 import com.devonjerothe.justletmelisten.view_models.MediaPlayerViewModel
+import com.devonjerothe.justletmelisten.view_models.MediaService
 import com.devonjerothe.justletmelisten.views.HomeScreen
 import com.devonjerothe.justletmelisten.views.PodcastDetailsScreen
 import com.devonjerothe.justletmelisten.views.SearchScreen
@@ -44,6 +46,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val serviceIntent = Intent(this, MediaService::class.java)
+        startService(serviceIntent)
+
         setContent {
             JustLetMeListenTheme {
                 PodcastApp()

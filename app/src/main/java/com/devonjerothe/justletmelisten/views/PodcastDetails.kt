@@ -46,6 +46,7 @@ import com.devonjerothe.justletmelisten.network.Podcast
 import com.devonjerothe.justletmelisten.view_models.PodcastDetailsUIState
 import com.devonjerothe.justletmelisten.view_models.PodcastDetailsViewModel
 import com.devonjerothe.justletmelisten.views.shared.ExpandingText
+import com.devonjerothe.justletmelisten.views.shared.formatTime
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -202,7 +203,7 @@ fun EpisodeRow(episode: Episode, onPlay: (Episode) -> Unit) {
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${episode.pubDate} - ${episode.duration} mins",
+                text = "${episode.pubDate} - ${formatTime(episode.duration?.toFloat() ?: 0f, true)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

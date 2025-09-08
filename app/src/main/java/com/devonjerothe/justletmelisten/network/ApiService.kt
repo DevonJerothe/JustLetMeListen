@@ -27,7 +27,8 @@ sealed class ApiResult<out T> {
 sealed class RssResult {
     data class Success(
         val channel: RssChannel,
-        val etag: String?
+        val etag: String?,
+        val lastModified: String?
     ) : RssResult()
 
     object NotModified : RssResult()
@@ -107,23 +108,27 @@ class ApiService {
 
     suspend fun getPodcastEpisodes(
         feedUrl: String,
-        etag: String? = null
+        etag: String? = null,
+        lastModified: String? = null
     ): RssResult {
         return try {
             val rssClient = HttpClient(OkHttp)
             val response: HttpResponse = rssClient.get(feedUrl) {
                 etag?.let { header(HttpHeaders.IfNoneMatch, it) }
+                lastModified?.let { header(HttpHeaders.IfModifiedSince, it) }
             }
 
             when (response.status) {
                 HttpStatusCode.OK -> {
                     val channel = response.bodyAsText()
                     val newEtag = response.headers[HttpHeaders.ETag]
+                    val lastModified = response.headers[HttpHeaders.LastModified]
 
                     val rssPodcast = RssParser().parse(channel)
                     RssResult.Success(
                         channel = rssPodcast,
-                        etag = newEtag
+                        etag = newEtag,
+                        lastModified = lastModified
                     )
                 }
                 HttpStatusCode.NotModified -> {
