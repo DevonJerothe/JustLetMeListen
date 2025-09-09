@@ -29,8 +29,8 @@ class PodcastRepo(
         return podcastDao.getPodcastById(podcastId)
     }
 
-    suspend fun getEpisode(episodeId: Long): Episode? {
-        return episodeDao.getEpisodeById(episodeId)
+    suspend fun getEpisode(guid: String): Episode? {
+        return episodeDao.getEpisodeById(guid)
     }
 
     suspend fun updateEpisode(episode: Episode) {
@@ -93,10 +93,12 @@ class PodcastRepo(
                 )
 
                 // map each item to Episode
-                val mappedEpisodes = episodes.map { item ->
+                val mappedEpisodes = episodes.mapNotNull { item ->
+                    if (item.guid.isNullOrBlank()) return@mapNotNull null
+
                     Episode(
                         podcastId = updatePodcast.id,
-                        guid = item.guid,
+                        guid = item.guid!!,
                         title = item.title,
                         description = item.description,
                         imageUrl = item.image,
@@ -143,11 +145,13 @@ class PodcastRepo(
                     category = response.channel.itunesChannelData?.categories?.firstOrNull()
                 )
 
-                val mappedEpisodes = episodes.map { item ->
+                val mappedEpisodes = episodes.mapNotNull { item ->
+                    if (item.guid.isNullOrBlank()) return@mapNotNull null
+
                     val image = item.itunesItemData?.image ?: response.channel.image?.url
 
                     Episode(
-                        guid = item.guid,
+                        guid = item.guid!!,
                         podcastId = podcast.id,
                         title = item.title,
                         description = stripHtml(item.description),

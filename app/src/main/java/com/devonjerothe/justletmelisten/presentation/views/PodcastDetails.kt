@@ -62,7 +62,7 @@ fun PodcastDetailsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val activeEpisode by viewModel.activeEpisode
         .map { episode ->
-            episode?.id
+            episode?.guid
         }
         .collectAsStateWithLifecycle(null)
     val paused by viewModel.paused
@@ -133,7 +133,7 @@ fun PodcastDetailsContent(
     episodes: List<Episode>,
     onClick: () -> Unit = {},
     onPlay: (Episode) -> Unit = {},
-    isActive: (Long) -> Boolean = { false },
+    isActive: (String) -> Boolean = { false },
     paused: Boolean = false,
     bottomPadding: PaddingValues
 ) {
@@ -211,7 +211,7 @@ fun PodcastDetailsContent(
 fun EpisodeRow(
     episode: Episode,
     onPlay: (Episode) -> Unit,
-    isActive: (Long) -> Boolean = { false },
+    isActive: (String) -> Boolean = { false },
     paused: Boolean = false
 ) {
     Row(
@@ -239,7 +239,7 @@ fun EpisodeRow(
         IconButton(
             onClick = { onPlay(episode) }
         ) {
-            val icon = if (!paused && isActive(episode.id)) R.drawable.pause_24px else R.drawable.play_arrow_24px
+            val icon = if (!paused && isActive(episode.guid)) R.drawable.pause_24px else R.drawable.play_arrow_24px
 
             Icon(
                 painter = painterResource(icon),

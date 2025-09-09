@@ -5,11 +5,17 @@ import androidx.annotation.OptIn
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.Player.COMMAND_SEEK_BACK
+import androidx.media3.common.Player.COMMAND_SEEK_FORWARD
+import androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT
+import androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -26,48 +32,109 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.MediaType
 import org.koin.android.ext.android.inject
 
 private const val ROOT_ID = "JUSTLETMELISTEN_ROOT"
 private const val CUSTOM_SKIP_FORWARD = "skip_forward"
 private const val CUSTOM_SKIP_BACKWARD = "skip_backward"
 
+@UnstableApi
 class MediaService : MediaLibraryService() {
 
     private val podcastRepo: PodcastRepo by inject()
     private val serviceScope = CoroutineScope(Dispatchers.Main)
 
-    private lateinit var player: ExoPlayer
+    private lateinit var player: Player
     private lateinit var mediaLibrarySession: MediaLibrarySession
     private var progressJob: Job? = null
+
+
+    val commandList = listOf(
+        CommandButton.Builder(
+            CommandButton.ICON_SKIP_BACK_30)
+            .setDisplayName("Skip Back 30s")
+            .setSessionCommand(SessionCommand(CUSTOM_SKIP_BACKWARD, Bundle.EMPTY))
+            .setSlots(CommandButton.SLOT_BACK)
+            .build(),
+        CommandButton.Builder(
+            CommandButton.ICON_SKIP_FORWARD_30)
+            .setDisplayName("Skip Forward 30s")
+            .setSessionCommand(SessionCommand(CUSTOM_SKIP_FORWARD, Bundle.EMPTY))
+            .setSlots(CommandButton.SLOT_FORWARD)
+            .setEnabled(true)
+            .build()
+    )
+
+    val commandListAuto = listOf(
+        CommandButton.Builder(
+            CommandButton.ICON_SKIP_BACK_30)
+            .setDisplayName("Skip Back 30s")
+            .setPlayerCommand(COMMAND_SEEK_BACK)
+            .setSlots(CommandButton.SLOT_BACK)
+            .build(),
+        CommandButton.Builder(
+            CommandButton.ICON_SKIP_FORWARD_30)
+            .setDisplayName("Skip Forward 30s")
+            .setPlayerCommand(COMMAND_SEEK_FORWARD)
+            .setSlots(CommandButton.SLOT_FORWARD)
+            .build()
+    )
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-
-        val commandList = listOf(
-            CommandButton.Builder(CommandButton.ICON_SKIP_BACK_30)
-                .setDisplayName("Skip Back 30s")
-                .setSessionCommand(SessionCommand(CUSTOM_SKIP_BACKWARD, Bundle.EMPTY))
-                .build(),
-            CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
-                .setDisplayName("Skip Forward 30s")
-                .setSessionCommand(SessionCommand(CUSTOM_SKIP_FORWARD, Bundle.EMPTY))
-                .build()
-        )
 
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
             .setUsage(C.USAGE_MEDIA)
             .build()
 
-        player = ExoPlayer.Builder(this)
+        val exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
             .build()
-            .apply { 
-                playWhenReady = false
-                addListener(playerListener)
+
+        player = object: ForwardingPlayer(exoPlayer) {
+            override fun getAvailableCommands(): Player.Commands {
+                return super.getAvailableCommands().buildUpon()
+                    .add(COMMAND_SEEK_FORWARD)
+                    .add(COMMAND_SEEK_BACK)
+                    .build()
             }
+
+            override fun isCurrentMediaItemSeekable(): Boolean {
+                return true
+            }
+
+            override fun isCurrentMediaItemLive(): Boolean {
+                return false
+            }
+
+            override fun isCommandAvailable(command: Int): Boolean {
+                if (command == COMMAND_SEEK_FORWARD || command == COMMAND_SEEK_BACK) {
+                    return true
+                }
+                if (command == COMMAND_SEEK_TO_NEXT || command == COMMAND_SEEK_TO_PREVIOUS) {
+                    return true
+                }
+
+                return super.isCommandAvailable(command)
+            }
+
+            override fun seekToNext() {
+                if (duration != C.TIME_UNSET) {
+                    val newPosition = (currentPosition + 30000L).coerceAtMost(duration)
+                    seekTo(newPosition)
+                }
+            }
+
+            override fun seekToPrevious() {
+                val newPosition = (currentPosition - 30000L).coerceAtLeast(0L)
+                seekTo(newPosition)
+            }
+        }
+
+        player.addListener(playerListener)
 
         mediaLibrarySession =
             MediaLibrarySession.Builder(this, player, LibrarySessionCallback())
@@ -154,7 +221,7 @@ class MediaService : MediaLibraryService() {
 
     private fun updateCurrentEpisodeProgress(markCompleted: Boolean = false) {
         val mediaItem = player.currentMediaItem
-        val episodeId = mediaItem?.mediaId?.toLongOrNull()
+        val episodeId = mediaItem?.mediaId
         
         if (episodeId != null) {
             val currentPosition = player.currentPosition
@@ -225,7 +292,7 @@ class MediaService : MediaLibraryService() {
                 val episodes = podcastRepo.getPlayedEpisodes()
                 val mediaItems = episodes.map { episode ->
                     MediaItem.Builder()
-                        .setMediaId(episode.id.toString())
+                        .setMediaId(episode.guid)
                         .setUri(episode.audioUrl)
                         .setMediaMetadata(
                             MediaMetadata.Builder()
@@ -250,22 +317,40 @@ class MediaService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>
         ): ListenableFuture<MutableList<MediaItem>> {
+
+            val isAndroidAuto = controller.packageName.contains("android.auto") ||
+                    controller.packageName.contains("gearhead")
+            if (isAndroidAuto) {
+                mediaSession.setMediaButtonPreferences(commandListAuto)
+            }
+
             return serviceScope.future {
                 val updatedItems = mediaItems.map { mediaItem ->
                     if (mediaItem.localConfiguration?.uri != null) {
                         return@map mediaItem
                     }
                     
-                    val episodeId = mediaItem.mediaId.toLongOrNull()
-                    if (episodeId != null) {
-                        MediaItem.Builder()
-                            .setMediaId(episodeId.toString())
-                            .setUri(mediaItem.requestMetadata.mediaUri ?: mediaItem.localConfiguration?.uri)
-                            .setMediaMetadata(mediaItem.mediaMetadata)
-                            .build()
-                    } else {
+                    val episodeId = mediaItem.mediaId
+                    val episode = podcastRepo.getEpisode(episodeId)
+                    if (episode == null) {
                         mediaItem
                     }
+
+                    MediaItem.Builder()
+                        .setMediaId(episodeId.toString())
+                        .setUri(episode?.audioUrl)
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(episode?.title)
+                                .setArtworkUri(episode?.imageUrl?.toUri())
+                                .setExtras(Bundle().apply {
+                                    putFloat("episode_progress", episode?.progress ?: 0f)
+                                })
+                                .setIsBrowsable(false)
+                                .setIsPlayable(true)
+                                .build()
+                        )
+                        .build()
                 }.toMutableList()
                 
                 updatedItems
@@ -278,11 +363,26 @@ class MediaService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
 
-            val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+            val isAndroidAuto = controller.packageName.contains("android.auto") ||
+                    controller.packageName.contains("gearhead")
+
+            if (!isAndroidAuto) {
+                val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                    .add(SessionCommand(CUSTOM_SKIP_BACKWARD, Bundle.EMPTY))
+                    .add(SessionCommand(CUSTOM_SKIP_FORWARD, Bundle.EMPTY))
+                    .build()
+
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(sessionCommands)
+                    .build()
+            }
+
+            val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(SessionCommand(CUSTOM_SKIP_BACKWARD, Bundle.EMPTY))
                 .add(SessionCommand(CUSTOM_SKIP_FORWARD, Bundle.EMPTY))
                 .build()
 
+            session.setMediaButtonPreferences(controller, commandListAuto)
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
                 .build()

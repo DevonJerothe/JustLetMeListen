@@ -147,8 +147,8 @@ class PodcastDetailsViewModel(
         }
     }
 
-    fun playEpisode(episode: Episode, activeId: Long? = null) {
-        if (activeId == episode.id) {
+    fun playEpisode(episode: Episode, activeId: String? = null) {
+        if (activeId == episode.guid) {
             mediaPlayer.onPlayPause()
         } else {
             mediaPlayer.playEpisode(episode)

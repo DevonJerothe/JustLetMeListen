@@ -10,8 +10,7 @@ import androidx.room.PrimaryKey
     tableName = "episodes",
     indices = [
         Index("last_played"),
-        Index("podcast_id"),
-        Index("guid", unique = true)],
+        Index("podcast_id")],
     foreignKeys = [
         ForeignKey(
             entity = Podcast::class,
@@ -22,11 +21,10 @@ import androidx.room.PrimaryKey
     ]
 )
 data class Episode(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
 
+    @PrimaryKey
     @ColumnInfo(name = "guid")
-    val guid: String?,
+    val guid: String,
 
     @ColumnInfo(name = "podcast_id")
     var podcastId: Long,

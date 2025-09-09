@@ -34,8 +34,8 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE podcast_id = :podcastId ORDER BY pub_date DESC")
     suspend fun getEpisodesByPodcastId(podcastId: Long): List<Episode>
 
-    @Query("SELECT * FROM episodes WHERE id = :id")
-    suspend fun getEpisodeById(id: Long): Episode?
+    @Query("SELECT * FROM episodes WHERE guid = :guid")
+    suspend fun getEpisodeById(guid: String): Episode?
 
     @Query("SELECT * FROM episodes WHERE title = :title")
     suspend fun getEpisodeByTitle(title: String): Episode?

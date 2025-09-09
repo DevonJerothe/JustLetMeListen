@@ -155,7 +155,7 @@ class MediaPlayerViewModel(
         )
 
         val mediaItem = MediaItem.Builder()
-            .setMediaId(episode.id.toString())
+            .setMediaId(episode.guid)
             .setUri(episode.audioUrl)
             .setMediaMetadata(
                 MediaMetadata.Builder()
