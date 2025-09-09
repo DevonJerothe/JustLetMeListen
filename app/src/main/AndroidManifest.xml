@@ -34,7 +34,7 @@
         </activity>
 
         <service
-            android:name=".view_models.MediaService"
+            android:name=".domain.MediaService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback"
             tools:ignore="ExportedService">
