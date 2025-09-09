@@ -43,6 +43,8 @@ import com.devonjerothe.justletmelisten.view_models.MediaPlayerUIState
 import com.devonjerothe.justletmelisten.view_models.MediaPlayerViewModel
 import com.devonjerothe.justletmelisten.R
 import com.devonjerothe.justletmelisten.views.shared.formatTime
+import ir.mahozad.multiplatform.wavyslider.WaveDirection
+import ir.mahozad.multiplatform.wavyslider.material3.WavySlider
 
 @Composable
 fun MediaPlayer(
@@ -146,12 +148,18 @@ fun MediaPlayerView(
         Spacer(modifier = Modifier.weight(1f))
 
         // Media Controls
-        Slider(
+        WavySlider(
             value = progress,
             valueRange = 0f..duration,
             onValueChange = onValueChange,
             onValueChangeFinished = onValueChangeFinished,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            waveLength = 48.dp,
+            waveHeight = 12.dp,
+            waveVelocity = 16.dp to WaveDirection.TAIL,
+            waveThickness = 5.dp,
+            trackThickness = 10.dp,
+            incremental = true
         )
         Row(
             modifier = Modifier.fillMaxWidth(),

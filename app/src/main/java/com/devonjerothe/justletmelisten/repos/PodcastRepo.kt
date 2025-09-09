@@ -38,6 +38,10 @@ class PodcastRepo(
         return episodeDao.getLastPlayedEpisode()
     }
 
+    suspend fun getPlayedEpisodes(): List<Episode> {
+        return episodeDao.getPlayedEpisodes()
+    }
+
     suspend fun getPodcastByTrack(trackId: Long): Podcast? {
         return podcastDao.getPodcastByTrackId(trackId)
     }

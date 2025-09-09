@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.protobuf)
     alias(libs.plugins.ksp)
-//    id("com.google.devtools.ksp")
 }
 
 android {
@@ -52,6 +51,7 @@ dependencies {
     // Other
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.datastore)
+    implementation(libs.wavy.slider)
 
     // ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.ui.compose)
     implementation(libs.androidx.media3.session)
+    implementation(libs.kotlinx.coroutines.guava)
 
     // Room
     implementation(libs.androidx.room.runtime)
