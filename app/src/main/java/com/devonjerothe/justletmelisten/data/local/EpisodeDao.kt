@@ -28,10 +28,10 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE last_played IS NOT NULL ORDER BY last_played DESC")
     suspend fun getPlayedEpisodes() : List<Episode>
 
-    @Query("SELECT * FROM episodes WHERE podcast_id = :podcastId ORDER BY pub_date DESC")
+    @Query("SELECT * FROM episodes WHERE podcast_id = :podcastId ORDER BY pub_timestamp DESC")
     fun observeEpisodesByPodcastId(podcastId: Long): Flow<List<Episode>>
 
-    @Query("SELECT * FROM episodes WHERE podcast_id = :podcastId ORDER BY pub_date DESC")
+    @Query("SELECT * FROM episodes WHERE podcast_id = :podcastId ORDER BY pub_timestamp DESC")
     suspend fun getEpisodesByPodcastId(podcastId: Long): List<Episode>
 
     @Query("SELECT * FROM episodes WHERE guid = :guid")

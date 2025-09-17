@@ -52,4 +52,7 @@ data class Episode(
 
     @ColumnInfo(name = "pub_date")
     val pubDate: String?,
+
+    @ColumnInfo(name = "pub_timestamp")
+    val timeStamp: Long?,
 )

@@ -3,12 +3,14 @@ package com.devonjerothe.justletmelisten.presentation.viewmodels
 import android.app.Application
 import android.content.ComponentName
 import android.os.Bundle
+import androidx.annotation.OptIn
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.devonjerothe.justletmelisten.data.local.Episode
@@ -38,7 +40,9 @@ sealed interface MediaPlayerUIState {
     ) : MediaPlayerUIState
 }
 
-class MediaPlayerViewModel(
+@OptIn(UnstableApi::class)
+class MediaPlayerViewModel
+    (
     app: Application,
     private val podcastRepo: PodcastRepo
 ) : ViewModel() {
@@ -108,9 +112,24 @@ class MediaPlayerViewModel(
 
     private fun loadLastPlayedEpisode() {
         viewModelScope.launch {
-            val lastPlayed = podcastRepo.getLastPlayedEpisode()
-            lastPlayed?.let {
-                playEpisode(lastPlayed, startPaused = true)
+            val controller = mediaController ?: return@launch
+            val currentItem = controller.currentMediaItem
+            if (currentItem != null) {
+                val currentEpisode = podcastRepo.getEpisode(currentItem.mediaId) ?: return@launch
+                _uiState.value = HasMedia(
+                    currentEpisode = currentEpisode,
+                    progress = controller.currentPosition.coerceAtLeast(0L).toFloat() / 1000f,
+                    duration = controller.duration.coerceAtLeast(0L).toFloat() / 1000f,
+                    paused = !controller.isPlaying
+                )
+                if (!controller.isPlaying) {
+                    startUIProgressJob()
+                }
+            } else {
+                val lastPlayed = podcastRepo.getLastPlayedEpisode()
+                lastPlayed?.let {
+                    playEpisode(lastPlayed, startPaused = true)
+                }
             }
         }
     }
@@ -146,6 +165,13 @@ class MediaPlayerViewModel(
 
     fun playEpisode(episode: Episode, startPaused: Boolean = false) {
         if (mediaController == null) return
+
+        if (mediaController?.currentMediaItem?.mediaId == episode.guid) {
+            if (!startPaused) {
+                mediaController?.play()
+            }
+            return
+        }
 
         // Update UI state immediately
         _uiState.value = HasMedia(

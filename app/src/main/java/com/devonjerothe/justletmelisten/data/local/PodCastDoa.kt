@@ -34,12 +34,4 @@ interface PodCastDoa {
 
     @Query("SELECT * FROM podcasts WHERE title = :title")
     suspend fun getPodcastByTitle(title: String): Podcast?
-
-    @Transaction
-    @Query("SELECT * FROM podcasts WHERE id = :id")
-    suspend fun getPodcastWithEpisodes(id: Long): PodcastWithEpisodes?
-
-    @Transaction
-    @Query("SELECT * FROM podcasts WHERE id = :id")
-    fun observePodcastWithEpisodes(id: Long): Flow<PodcastWithEpisodes>
 }
