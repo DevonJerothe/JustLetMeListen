@@ -44,6 +44,7 @@ import coil.compose.AsyncImage
 import com.devonjerothe.justletmelisten.R
 import com.devonjerothe.justletmelisten.core.formatTime
 import com.devonjerothe.justletmelisten.core.navigation.NavigationController
+import com.devonjerothe.justletmelisten.core.stripHtml
 import com.devonjerothe.justletmelisten.data.local.Episode
 import com.devonjerothe.justletmelisten.data.local.Podcast
 import com.devonjerothe.justletmelisten.presentation.viewmodels.PodcastDetailsUIState
@@ -179,7 +180,7 @@ fun PodcastDetailsContent(
                 }
 
                 ExpandingText(
-                    text = podcast.description ?: "",
+                    text = stripHtml(podcast.description),
                     minLines = 5
                 )
 

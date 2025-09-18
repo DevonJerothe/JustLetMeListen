@@ -1,5 +1,6 @@
 package com.devonjerothe.justletmelisten.domain
 
+import com.devonjerothe.justletmelisten.core.parseDate
 import com.devonjerothe.justletmelisten.core.parseDuration
 import com.devonjerothe.justletmelisten.core.stripHtml
 import com.devonjerothe.justletmelisten.core.toDisplayDate
@@ -13,6 +14,7 @@ import com.devonjerothe.justletmelisten.data.remote.ApiService
 import com.devonjerothe.justletmelisten.data.remote.RssResult
 import com.devonjerothe.justletmelisten.data.remote.SearchResponse
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 
 class PodcastRepo(
     private val podcastDao: PodCastDoa,
@@ -44,6 +46,9 @@ class PodcastRepo(
     suspend fun getPlayedEpisodes(): List<Episode> {
         return episodeDao.getPlayedEpisodes()
     }
+    suspend fun getEpisodesByPodcastId(podcastId: Long): List<Episode> {
+        return episodeDao.getEpisodesByPodcastId(podcastId)
+    }
 
     suspend fun getPodcastByTrack(trackId: Long): Podcast? {
         return podcastDao.getPodcastByTrackId(trackId)
@@ -73,12 +78,25 @@ class PodcastRepo(
         return podcastDao.observeAllPodcasts()
     }
 
+    suspend fun getPodcasts(): List<Podcast> {
+        return podcastDao.getAllPodcasts()
+    }
+
+    fun observePodcastWithEpisodes(id: Long): Flow<PodcastWithEpisodes> {
+        return combine(
+            podcastDao.observePodcast(id), 
+            episodeDao.observeEpisodesByPodcastId(id)
+        ) { podcast, episodes -> 
+            PodcastWithEpisodes(podcast, episodes)
+        }
+    }
+
     suspend fun observePodcastFeed(
         podcastId: Long,
     ): Flow<PodcastWithEpisodes> {
         val podcast = podcastDao.getPodcastById(podcastId)
 
-        val feedUrl = podcast?.feedUrl ?: return podcastDao.observePodcastWithEpisodes(podcastId)
+        val feedUrl = podcast?.feedUrl ?: return observePodcastWithEpisodes(podcastId)
         val response = apiService.getPodcastEpisodes(feedUrl, podcast.etag, podcast.lastModified)
 
         when (response) {
@@ -96,15 +114,18 @@ class PodcastRepo(
                 val mappedEpisodes = episodes.mapNotNull { item ->
                     if (item.guid.isNullOrBlank()) return@mapNotNull null
 
+                    val image = item.itunesItemData?.image ?: response.channel.image?.url
+
                     Episode(
                         podcastId = updatePodcast.id,
                         guid = item.guid!!,
                         title = item.title,
-                        description = item.description,
-                        imageUrl = item.image,
+                        description = stripHtml(item.description),
+                        imageUrl = image,
                         audioUrl = item.rawEnclosure?.url,
-                        duration = item.rawEnclosure?.length,
-                        pubDate = toDisplayDate(item.pubDate ?: "")
+                        duration = parseDuration(item.itunesItemData?.duration),
+                        pubDate = toDisplayDate(item.pubDate ?: ""),
+                        timeStamp = parseDate(item.pubDate ?: "")
                     )
                 }
 
@@ -112,15 +133,15 @@ class PodcastRepo(
                 podcastDao.upsertPodcast(updatePodcast)
                 episodeDao.upsertAll(mappedEpisodes)
 
-                return podcastDao.observePodcastWithEpisodes(podcastId)
+                return observePodcastWithEpisodes(podcastId)
             }
             is RssResult.NotModified -> {
                 // pull episode data from db
-                return podcastDao.observePodcastWithEpisodes(podcastId)
+                return observePodcastWithEpisodes(podcastId)
             }
             is RssResult.Error -> {
                 // TODO: Handle error
-                return podcastDao.observePodcastWithEpisodes(podcastId)
+                return observePodcastWithEpisodes(podcastId)
             }
         }
     }
@@ -158,7 +179,8 @@ class PodcastRepo(
                         imageUrl = image,
                         audioUrl = item.rawEnclosure?.url,
                         duration = parseDuration(item.itunesItemData?.duration),
-                        pubDate = toDisplayDate(item.pubDate ?: "")
+                        pubDate = toDisplayDate(item.pubDate ?: ""),
+                        timeStamp = parseDate(item.pubDate ?: "")
                     )
                 }
 

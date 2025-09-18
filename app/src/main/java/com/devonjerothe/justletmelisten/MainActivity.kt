@@ -1,5 +1,6 @@
 package com.devonjerothe.justletmelisten
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -19,6 +20,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.util.UnstableApi
 import androidx.navigation.compose.rememberNavController
 import com.devonjerothe.justletmelisten.core.navigation.NavigationController
 import com.devonjerothe.justletmelisten.core.navigation.PodcastNavGraph
@@ -31,6 +33,8 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
 class MainActivity : ComponentActivity() {
+
+    @SuppressLint("UnsafeOptInUsageError")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
