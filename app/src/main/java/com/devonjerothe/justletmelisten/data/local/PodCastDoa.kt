@@ -23,6 +23,9 @@ interface PodCastDoa {
     @Query("SELECT * FROM podcasts ORDER BY title ASC")
     fun observeAllPodcasts(): Flow<List<Podcast>>
 
+    @Query("SELECT * FROM podcasts ORDER BY title ASC")
+    suspend fun getAllPodcasts(): List<Podcast>
+
     @Query("SELECT * FROM podcasts WHERE id = :id")
     fun observePodcast(id: Long): Flow<Podcast>
 

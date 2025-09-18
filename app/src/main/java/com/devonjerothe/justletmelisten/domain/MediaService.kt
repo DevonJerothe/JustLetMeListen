@@ -1,6 +1,7 @@
 package com.devonjerothe.justletmelisten.domain
 
 import android.os.Bundle
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
@@ -13,6 +14,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
@@ -32,6 +34,9 @@ import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 
 private const val ROOT_ID = "JUSTLETMELISTEN_ROOT"
+private const val PODCASTS_ID = "JUSTLETMELISTEN_PODCASTS"
+private const val RECENTLY_PLAYED_ID = "JUSTLETMELISTEN_RECENTLY_PLAYED"
+private const val PODCAST_VIEW = "PODCAST_"
 private const val CUSTOM_SKIP_FORWARD = "skip_forward"
 private const val CUSTOM_SKIP_BACKWARD = "skip_backward"
 
@@ -248,7 +253,7 @@ class MediaService : MediaLibraryService() {
                 .setMediaId(ROOT_ID)
                 .setMediaMetadata(
                     MediaMetadata.Builder()
-                        .setTitle("Recently Played")
+                        .setTitle("Podcasts")
                         .setIsBrowsable(true)
                         .setIsPlayable(false)
                         .build()
@@ -268,17 +273,76 @@ class MediaService : MediaLibraryService() {
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
 
-            if (parentId != ROOT_ID) {
-                return Futures.immediateFuture(LibraryResult.ofItemList(emptyList(), params))
-            }
-
             return serviceScope.future {
-                val episodes = podcastRepo.getPlayedEpisodes()
-                val mediaItems = episodes.map { episode ->
-                    createMediaItem(episode)
-                }
+                when (parentId) {
+                    ROOT_ID -> {
+                        val podcastsTab = MediaItem.Builder()
+                            .setMediaId(PODCASTS_ID)
+                            .setMediaMetadata(
+                                MediaMetadata.Builder()
+                                    .setTitle("Podcasts")
+                                    .setIsBrowsable(true)
+                                    .setIsPlayable(false)
+                                    .build()
+                            )
+                            .build()
 
-                LibraryResult.ofItemList(mediaItems, params)
+                        val recentlyPlayedTab = MediaItem.Builder()
+                            .setMediaId(RECENTLY_PLAYED_ID)
+                            .setMediaMetadata(
+                                MediaMetadata.Builder()
+                                    .setTitle("Recently Played")
+                                    .setIsBrowsable(true)
+                                    .setIsPlayable(false)
+                                    .build()
+                            )
+                            .build()
+
+                        LibraryResult.ofItemList(listOf(podcastsTab, recentlyPlayedTab), params)
+                    }
+                    PODCASTS_ID -> {
+                        val podcasts = podcastRepo.getPodcasts()
+                        val items = podcasts.map { podcast ->
+                            MediaItem.Builder()
+                                .setMediaId("${PODCAST_VIEW}${podcast.id}")
+                                .setMediaMetadata(
+                                    MediaMetadata.Builder()
+                                        .setTitle(podcast.title)
+                                        .setArtworkUri(podcast.imageUrl?.toUri())
+                                        .setIsBrowsable(true)
+                                        .setIsPlayable(false)
+                                        .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST)
+                                        .build()
+                                ) 
+                                .build()
+                        }
+
+                        LibraryResult.ofItemList(items, params)
+                    }
+                    RECENTLY_PLAYED_ID -> {
+                        val episodes = podcastRepo.getPlayedEpisodes()
+                        val items = episodes.map { episode ->
+                            createMediaItem(episode)
+                        }
+
+                        LibraryResult.ofItemList(items, params)
+                    }
+                    else -> if (parentId.startsWith(PODCAST_VIEW)) {
+                        val podcastId = parentId.removePrefix(PODCAST_VIEW).toLongOrNull()
+                        if (podcastId == null) {
+                            LibraryResult.ofItemList(emptyList(), params)
+                        } else {
+                            val episodes = podcastRepo.getEpisodesByPodcastId(podcastId)
+                            val items = episodes.map { episode ->
+                                createMediaItem(episode)
+                            }
+
+                            LibraryResult.ofItemList(items, params)
+                        }
+                    } else {
+                        LibraryResult.ofItemList(emptyList(), params)
+                    }
+                }
             }
         }
 
@@ -324,10 +388,12 @@ class MediaService : MediaLibraryService() {
                         player.setMediaItem(mediaItem)
                         player.prepare()
 
-                        // Playe once ready so we can scrub to the last played position
+                        // Play once ready so we can scrub to the last played position
                         player.playWhenReady = true
                     }
                 }
+            } else {
+                player.pause()
             }
 
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()

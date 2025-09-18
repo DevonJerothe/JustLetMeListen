@@ -46,6 +46,9 @@ class PodcastRepo(
     suspend fun getPlayedEpisodes(): List<Episode> {
         return episodeDao.getPlayedEpisodes()
     }
+    suspend fun getEpisodesByPodcastId(podcastId: Long): List<Episode> {
+        return episodeDao.getEpisodesByPodcastId(podcastId)
+    }
 
     suspend fun getPodcastByTrack(trackId: Long): Podcast? {
         return podcastDao.getPodcastByTrackId(trackId)
@@ -73,6 +76,10 @@ class PodcastRepo(
 
     fun observePodcasts(): Flow<List<Podcast>> {
         return podcastDao.observeAllPodcasts()
+    }
+
+    suspend fun getPodcasts(): List<Podcast> {
+        return podcastDao.getAllPodcasts()
     }
 
     fun observePodcastWithEpisodes(id: Long): Flow<PodcastWithEpisodes> {
