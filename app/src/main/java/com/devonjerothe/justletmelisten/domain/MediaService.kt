@@ -75,6 +75,7 @@ class MediaService : MediaLibraryService() {
 
         val exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
             .build()
 
         player = object: ForwardingPlayer(exoPlayer) {
@@ -337,19 +338,6 @@ class MediaService : MediaLibraryService() {
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
                 .build()
-        }
-
-        override fun onDisconnected(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo
-        ) {
-            if (controller.packageName in aAutoControllers) {
-                aAutoControllers.remove(controller.packageName)
-                isAndroidAutoConnected = aAutoControllers.isNotEmpty()
-            }
-            if (!isAndroidAutoConnected) {
-                player.pause()
-            }
         }
 
         override fun onCustomCommand(
