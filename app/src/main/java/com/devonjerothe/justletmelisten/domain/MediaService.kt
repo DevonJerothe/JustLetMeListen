@@ -1,5 +1,10 @@
 package com.devonjerothe.justletmelisten.domain
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.OptIn
@@ -51,6 +56,7 @@ class MediaService : MediaLibraryService() {
     private var progressJob: Job? = null
 
     private var isAndroidAutoConnected: Boolean = false
+    private var lastReconnect: Long = 0L // Used to properly track android auto reconnects
     private var aAutoControllers = mutableSetOf<String>()
 
     val commandList = listOf(
@@ -84,6 +90,7 @@ class MediaService : MediaLibraryService() {
             .build()
 
         player = object: ForwardingPlayer(exoPlayer) {
+
             override fun getAvailableCommands(): Player.Commands {
                 return super.getAvailableCommands().buildUpon()
                     .add(COMMAND_SEEK_FORWARD)
@@ -146,6 +153,7 @@ class MediaService : MediaLibraryService() {
     private var hasAutoSeeked = false
 
     private val playerListener = object: Player.Listener {
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 startProgressJob()
@@ -158,7 +166,7 @@ class MediaService : MediaLibraryService() {
 
         override fun onEvents(player: Player, events: Player.Events) {
             // Handle auto-seek when media is ready and buffered
-            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && 
+            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
                 player.playbackState == Player.STATE_READY && !hasAutoSeeked) {
                 
                 val mediaItem = player.currentMediaItem
@@ -367,11 +375,34 @@ class MediaService : MediaLibraryService() {
             }
         }
 
+        override fun onDisconnected(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ) {
+            // Handle disconnection
+            super.onDisconnected(session, controller)
+            val controllers = mediaLibrarySession.connectedControllers
+
+            // Check if any gearbox controllers are still active, if not, pause playback
+            var isAAConnected: Boolean = false
+            for (controller in controllers) {
+                if (mediaLibrarySession.isAutoCompanionController(controller)) {
+                    isAAConnected = true
+                }
+            }
+            if (!isAAConnected) {
+                player.pause()
+            }
+        }
+
         @OptIn(UnstableApi::class)
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
+
+            // log packageName
+            Log.d("MediaService", "Controller package name onConnect: ${controller.packageName}")
 
             val isAuto = controller.packageName.contains("android.auto") || controller.packageName.contains("gearhead")
             if (isAuto) {
@@ -393,7 +424,7 @@ class MediaService : MediaLibraryService() {
                     }
                 }
             } else {
-                player.pause()
+                player.playWhenReady = false
             }
 
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
