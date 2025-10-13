@@ -1,5 +1,11 @@
 package com.devonjerothe.justletmelisten.domain
 
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.OptIn
@@ -28,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -44,6 +51,7 @@ private const val CUSTOM_SKIP_BACKWARD = "skip_backward"
 class MediaService : MediaLibraryService() {
 
     private val podcastRepo: PodcastRepo by inject()
+    private lateinit var carConnectionManager: CarConnectionManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private lateinit var player: Player
@@ -51,7 +59,6 @@ class MediaService : MediaLibraryService() {
     private var progressJob: Job? = null
 
     private var isAndroidAutoConnected: Boolean = false
-    private var aAutoControllers = mutableSetOf<String>()
 
     val commandList = listOf(
         CommandButton.Builder(
@@ -84,6 +91,7 @@ class MediaService : MediaLibraryService() {
             .build()
 
         player = object: ForwardingPlayer(exoPlayer) {
+
             override fun getAvailableCommands(): Player.Commands {
                 return super.getAvailableCommands().buildUpon()
                     .add(COMMAND_SEEK_FORWARD)
@@ -125,6 +133,16 @@ class MediaService : MediaLibraryService() {
 
         player.addListener(playerListener)
 
+        carConnectionManager = CarConnectionManager(applicationContext)
+
+        // Previous methods of handling AA connection via MediaService was migraine inducing...
+        // instead we should listen for AA connection by the device itself.
+        serviceScope.launch {
+            carConnectionManager.connectionStatus.collectLatest { state ->
+                handleAndroidAutoConnectionState(state)
+            }
+        }
+
         mediaLibrarySession =
             MediaLibrarySession.Builder(this, player, LibrarySessionCallback())
                 .setCommandButtonsForMediaItems(commandList)
@@ -138,6 +156,7 @@ class MediaService : MediaLibraryService() {
 
     override fun onDestroy() {
         stopProgressJob()
+        carConnectionManager.destroy()
         player.release()
         mediaLibrarySession.release()
         super.onDestroy()
@@ -145,7 +164,22 @@ class MediaService : MediaLibraryService() {
 
     private var hasAutoSeeked = false
 
+    // We should probably use this for auto seek in android auto as well instead of onConnect calls
+    private fun handleAndroidAutoConnectionState(state: CarConnectionStatus) {
+        when (state) {
+            CarConnectionStatus.CONNECTED -> {}
+            CarConnectionStatus.CONNECTED_OS -> {}
+            CarConnectionStatus.NOT_CONNECTED -> {}
+            CarConnectionStatus.DISCONNECTED -> {
+                Log.d("MediaService", "Disconnected from AA")
+                player.pause()
+                updateCurrentEpisodeProgress()
+            }
+        }
+
+    }
     private val playerListener = object: Player.Listener {
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 startProgressJob()
@@ -158,7 +192,7 @@ class MediaService : MediaLibraryService() {
 
         override fun onEvents(player: Player, events: Player.Events) {
             // Handle auto-seek when media is ready and buffered
-            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && 
+            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
                 player.playbackState == Player.STATE_READY && !hasAutoSeeked) {
                 
                 val mediaItem = player.currentMediaItem
@@ -373,11 +407,10 @@ class MediaService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
 
-            val isAuto = controller.packageName.contains("android.auto") || controller.packageName.contains("gearhead")
-            if (isAuto) {
-                aAutoControllers.add(controller.packageName)
-                isAndroidAutoConnected = true
-            }
+            // log packageName
+            Log.d("MediaService", "Controller package name onConnect: ${controller.packageName}")
+
+            isAndroidAutoConnected = mediaLibrarySession.isAutoCompanionController(controller) || mediaLibrarySession.isAutomotiveController(controller)
 
             if (isAndroidAutoConnected && !player.isPlaying) {
                 // load most recently played podcast
@@ -394,6 +427,7 @@ class MediaService : MediaLibraryService() {
                 }
             } else {
                 player.pause()
+                player.playWhenReady = false
             }
 
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()

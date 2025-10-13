@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.datastore)
     implementation(libs.wavy.slider)
+    implementation(libs.androidx.app)
 
     // ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
