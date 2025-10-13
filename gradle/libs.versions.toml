@@ -1,5 +1,6 @@
 [versions]
 agp = "8.12.2"
+app = "1.7.0"
 coilCompose = "2.7.0"
 datastore = "1.1.7"
 koinAndroidxCompose = "4.1.0"
@@ -25,6 +26,7 @@ rssparser = "6.0.12"
 wavySlider = "2.1.0"
 
 [libraries]
+androidx-app = { module = "androidx.car.app:app", version.ref = "app" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-datastore = { module = "androidx.datastore:datastore", version.ref = "datastore" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
