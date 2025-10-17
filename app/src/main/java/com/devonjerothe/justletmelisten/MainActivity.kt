@@ -20,7 +20,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.media3.common.util.UnstableApi
 import androidx.navigation.compose.rememberNavController
 import com.devonjerothe.justletmelisten.core.navigation.NavigationController
 import com.devonjerothe.justletmelisten.core.navigation.PodcastNavGraph
@@ -39,6 +38,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Start MediaService (it will run independently and monitor app lifecycle)
         val serviceIntent = Intent(this, MediaService::class.java)
         startService(serviceIntent)
 

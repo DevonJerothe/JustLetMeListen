@@ -1,6 +1,7 @@
 package com.devonjerothe.justletmelisten.core.di
 
 import androidx.navigation.NavHostController
+import com.devonjerothe.justletmelisten.core.AppLifecycleObserver
 import com.devonjerothe.justletmelisten.core.navigation.NavigationController
 import com.devonjerothe.justletmelisten.data.local.PodcastDatabase
 import com.devonjerothe.justletmelisten.data.remote.ApiService
@@ -51,6 +52,11 @@ val serviceContainer = module {
             androidApplication(),
             podcastRepo = get()
         )
+    }
+
+    // Lifecycle Observer for MediaService
+    single {
+        AppLifecycleObserver()
     }
 
     // ViewModels

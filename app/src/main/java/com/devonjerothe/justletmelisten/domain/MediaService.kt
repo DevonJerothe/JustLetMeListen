@@ -1,11 +1,5 @@
 package com.devonjerothe.justletmelisten.domain
 
-import android.annotation.SuppressLint
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.media.AudioManager
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.OptIn
@@ -20,11 +14,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
-import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import com.devonjerothe.justletmelisten.core.AppLifecycleObserver
 import com.devonjerothe.justletmelisten.data.local.Episode
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -38,6 +32,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.koin.android.ext.android.inject
 
 private const val ROOT_ID = "JUSTLETMELISTEN_ROOT"
@@ -51,6 +46,7 @@ private const val CUSTOM_SKIP_BACKWARD = "skip_backward"
 class MediaService : MediaLibraryService() {
 
     private val podcastRepo: PodcastRepo by inject()
+    private val appLifecycleObserver: AppLifecycleObserver by inject()
     private lateinit var carConnectionManager: CarConnectionManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -58,7 +54,9 @@ class MediaService : MediaLibraryService() {
     private lateinit var mediaLibrarySession: MediaLibrarySession
     private var progressJob: Job? = null
 
-    private var isAndroidAutoConnected: Boolean = false
+    // Android Auto and app state tracking
+    private var isAndroidAutoConnected = false
+    private var isAppInForeground = false
 
     val commandList = listOf(
         CommandButton.Builder(
@@ -80,18 +78,20 @@ class MediaService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
 
+        // Setup audio attributes for podcast content
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
             .setUsage(C.USAGE_MEDIA)
             .build()
 
+        // Create ExoPlayer with enhanced seek controls
         val exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        player = object: ForwardingPlayer(exoPlayer) {
-
+        // Wrap player with custom seek behavior for 30-second skip
+        player = object : ForwardingPlayer(exoPlayer) {
             override fun getAvailableCommands(): Player.Commands {
                 return super.getAvailableCommands().buildUpon()
                     .add(COMMAND_SEEK_FORWARD)
@@ -99,23 +99,15 @@ class MediaService : MediaLibraryService() {
                     .build()
             }
 
-            override fun isCurrentMediaItemSeekable(): Boolean {
-                return true
-            }
-
-            override fun isCurrentMediaItemLive(): Boolean {
-                return false
-            }
+            override fun isCurrentMediaItemSeekable(): Boolean = true
+            override fun isCurrentMediaItemLive(): Boolean = false
 
             override fun isCommandAvailable(command: Int): Boolean {
-                if (command == COMMAND_SEEK_FORWARD || command == COMMAND_SEEK_BACK) {
-                    return true
+                return when (command) {
+                    COMMAND_SEEK_FORWARD, COMMAND_SEEK_BACK,
+                    COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_PREVIOUS -> true
+                    else -> super.isCommandAvailable(command)
                 }
-                if (command == COMMAND_SEEK_TO_NEXT || command == COMMAND_SEEK_TO_PREVIOUS) {
-                    return true
-                }
-
-                return super.isCommandAvailable(command)
             }
 
             override fun seekForward() {
@@ -132,22 +124,27 @@ class MediaService : MediaLibraryService() {
         }
 
         player.addListener(playerListener)
-
         carConnectionManager = CarConnectionManager(applicationContext)
 
-        // Previous methods of handling AA connection via MediaService was migraine inducing...
-        // instead we should listen for AA connection by the device itself.
+        // Monitor Android Auto connection state
         serviceScope.launch {
             carConnectionManager.connectionStatus.collectLatest { state ->
                 handleAndroidAutoConnectionState(state)
             }
         }
 
-        mediaLibrarySession =
-            MediaLibrarySession.Builder(this, player, LibrarySessionCallback())
-                .setCommandButtonsForMediaItems(commandList)
-                .setMediaButtonPreferences(commandList)
-                .build()
+        // Monitor app lifecycle state using ProcessLifecycleOwner
+        serviceScope.launch {
+            appLifecycleObserver.isForeground.collectLatest { isForeground ->
+                handleAppForegroundState(isForeground)
+            }
+        }
+
+        // Build MediaLibrarySession with custom controls
+        mediaLibrarySession = MediaLibrarySession.Builder(this, player, LibrarySessionCallback())
+            .setCommandButtonsForMediaItems(commandList)
+            .setMediaButtonPreferences(commandList)
+            .build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession {
@@ -164,55 +161,80 @@ class MediaService : MediaLibraryService() {
 
     private var hasAutoSeeked = false
 
-    // We should probably use this for auto seek in android auto as well instead of onConnect calls
     private fun handleAndroidAutoConnectionState(state: CarConnectionStatus) {
         when (state) {
-            CarConnectionStatus.CONNECTED -> {}
-            CarConnectionStatus.CONNECTED_OS -> {}
-            CarConnectionStatus.NOT_CONNECTED -> {}
-            CarConnectionStatus.DISCONNECTED -> {
-                Log.d("MediaService", "Disconnected from AA")
-                player.pause()
-                updateCurrentEpisodeProgress()
+            CarConnectionStatus.CONNECTED, CarConnectionStatus.CONNECTED_OS -> {
+                Log.d("MediaService", "Connected to Android Auto")
+                isAndroidAutoConnected = true
+            }
+            CarConnectionStatus.NOT_CONNECTED, CarConnectionStatus.DISCONNECTED -> {
+                Log.d("MediaService", "Not connected to Android Auto")
+                isAndroidAutoConnected = false
+                if (!isAppInForeground) {
+                    handleDisconnectionWhenAppNotInForeground()
+                }
             }
         }
-
     }
-    private val playerListener = object: Player.Listener {
 
+    private fun handleDisconnectionWhenAppNotInForeground() {
+        // Always stop playback when AA disconnects, regardless of user-initiated status
+        Log.d("MediaService", "AA disconnected or App process stopped - stopping all playback")
+        player.pause()
+        updateCurrentEpisodeProgress()
+
+        // Stop playback completely when AA disconnects
+        player.stop()
+        player.clearMediaItems()
+
+        // Schedule service to stop after a delay if still not needed
+        serviceScope.launch {
+            delay(30000) // 30 seconds grace period
+            Log.d("MediaService", "Stopping process")
+            if (!isAndroidAutoConnected && !isAppInForeground) {
+                stopSelf()
+            }
+        }
+    }
+
+    // Check when the app is in foreground or not. Primarily used to prevent audio playback when AA disconnects.
+    private fun handleAppForegroundState(isForeground: Boolean) {
+        isAppInForeground = isForeground
+    }
+
+    private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 startProgressJob()
             } else {
                 stopProgressJob()
-                // Save progress when pausing
                 updateCurrentEpisodeProgress()
             }
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
-            // Handle auto-seek when media is ready and buffered
-            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
-                player.playbackState == Player.STATE_READY && !hasAutoSeeked) {
-                
-                val mediaItem = player.currentMediaItem
-                val episodeProgress = mediaItem?.mediaMetadata?.extras?.getFloat("episode_progress", 0f) ?: 0f
-                
-                if (episodeProgress > 0) {
-                    hasAutoSeeked = true
-                    player.seekTo((episodeProgress * 1000f).toLong())
+            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)) {
+                when (player.playbackState) {
+                    Player.STATE_READY -> {
+                        // Auto-seek to saved position when media is ready
+                        if (!hasAutoSeeked) {
+                            val mediaItem = player.currentMediaItem
+                            val episodeProgress = mediaItem?.mediaMetadata?.extras?.getFloat("episode_progress", 0f) ?: 0f
+
+                            if (episodeProgress > 0) {
+                                hasAutoSeeked = true
+                                player.seekTo((episodeProgress * 1000f).toLong())
+                            }
+                        }
+                    }
+                    Player.STATE_ENDED -> {
+                        updateCurrentEpisodeProgress(markCompleted = true)
+                    }
                 }
-            }
-            
-            // Mark episode as completed when ended
-            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && 
-                player.playbackState == Player.STATE_ENDED) {
-                updateCurrentEpisodeProgress(markCompleted = true)
             }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            // Reset auto-seek flag when media item changes
             hasAutoSeeked = false
         }
 
@@ -221,7 +243,6 @@ class MediaService : MediaLibraryService() {
             newPosition: Player.PositionInfo,
             reason: Int
         ) {
-            // Update progress when user seeks
             if (reason == Player.DISCONTINUITY_REASON_SEEK) {
                 updateCurrentEpisodeProgress()
             }
@@ -243,34 +264,30 @@ class MediaService : MediaLibraryService() {
     }
 
     private fun updateCurrentEpisodeProgress(markCompleted: Boolean = false) {
-        val mediaItem = player.currentMediaItem
-        val episodeId = mediaItem?.mediaId
-        
-        if (episodeId != null) {
-            val currentPosition = player.currentPosition
-            val duration = player.duration
+        val mediaItem = player.currentMediaItem ?: return
+        val episodeId = mediaItem.mediaId ?: return
 
-            if (currentPosition >= 0 && duration > 0) {
-                val progress = if (markCompleted) {
-                    duration.toFloat() / 1000f
-                } else {
-                    currentPosition.toFloat() / 1000f
-                }
+        val currentPosition = player.currentPosition
+        val duration = player.duration
 
-                serviceScope.launch(Dispatchers.IO) {
-                    try {
-                        // Get the current episode from database
-                        val episode = podcastRepo.getEpisode(episodeId)
-                        episode?.let {
-                            val updatedEpisode = it.copy(
-                                progress = progress,
-                                lastPlayed = System.currentTimeMillis()
-                            )
-                            podcastRepo.updateEpisode(updatedEpisode)
-                        }
-                    } catch (e: Exception) {
-                        // Handle error silently
+        if (currentPosition >= 0 && duration > 0) {
+            val progress = if (markCompleted) {
+                duration.toFloat() / 1000f
+            } else {
+                currentPosition.toFloat() / 1000f
+            }
+
+            serviceScope.launch(Dispatchers.IO) {
+                try {
+                    podcastRepo.getEpisode(episodeId)?.let { episode ->
+                        val updatedEpisode = episode.copy(
+                            progress = progress,
+                            lastPlayed = System.currentTimeMillis()
+                        )
+                        podcastRepo.updateEpisode(updatedEpisode)
                     }
+                } catch (e: Exception) {
+                    Log.w("MediaService", "Failed to update episode progress", e)
                 }
             }
         }
@@ -407,27 +424,27 @@ class MediaService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
 
-            // log packageName
-            Log.d("MediaService", "Controller package name onConnect: ${controller.packageName}")
+            Log.d("MediaService", "Controller connected: ${controller.packageName}")
 
-            isAndroidAutoConnected = mediaLibrarySession.isAutoCompanionController(controller) || mediaLibrarySession.isAutomotiveController(controller)
+            val isAutoController = mediaLibrarySession.isAutoCompanionController(controller) ||
+                                   mediaLibrarySession.isAutomotiveController(controller)
+            Log.d("MediaService", "Is auto controller: $isAutoController")
 
-            if (isAndroidAutoConnected && !player.isPlaying) {
-                // load most recently played podcast
-                serviceScope.launch {
-                    val episode = podcastRepo.getLastPlayedEpisode()
-                    episode?.let {
-                        val mediaItem = createMediaItem(episode)
-                        player.setMediaItem(mediaItem)
-                        player.prepare()
+            if (isAutoController) {
+                isAndroidAutoConnected = true
+                Log.d("MediaService", "Android Auto connected")
 
-                        // Play once ready so we can scrub to the last played position
-                        player.playWhenReady = true
+                // Auto-load last played episode when AA connects and app not in foreground
+                if (!isAppInForeground && !player.isPlaying) {
+                    serviceScope.launch {
+                        podcastRepo.getLastPlayedEpisode()?.let { episode ->
+                            val mediaItem = createMediaItem(episode)
+                            player.setMediaItem(mediaItem)
+                            player.prepare()
+                            player.playWhenReady = true
+                        }
                     }
                 }
-            } else {
-                player.pause()
-                player.playWhenReady = false
             }
 
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
@@ -446,23 +463,16 @@ class MediaService : MediaLibraryService() {
             customCommand: SessionCommand,
             args: Bundle
         ): ListenableFuture<SessionResult> {
-
             when (customCommand.customAction) {
                 CUSTOM_SKIP_FORWARD -> {
-                    val currentPosition = player.currentPosition
-                    val duration = player.duration
-                    val newPosition = (currentPosition + 30000).coerceAtMost(duration)
-                    player.seekTo(newPosition)
+                    player.seekForward()
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 CUSTOM_SKIP_BACKWARD -> {
-                    val currentPosition = player.currentPosition
-                    val newPosition = (currentPosition - 30000).coerceAtLeast(0L)
-                    player.seekTo(newPosition)
+                    player.seekBack()
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
             }
-
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
     }
@@ -478,7 +488,6 @@ class MediaService : MediaLibraryService() {
                     .setExtras(Bundle().apply {
                         putFloat("episode_progress", episode.progress)
                     })
-                    .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .build()
             )
