@@ -170,35 +170,35 @@ class MediaService : MediaLibraryService() {
             CarConnectionStatus.NOT_CONNECTED, CarConnectionStatus.DISCONNECTED -> {
                 Log.d("MediaService", "Not connected to Android Auto")
                 isAndroidAutoConnected = false
-                if (!isAppInForeground) {
-                    handleDisconnectionWhenAppNotInForeground()
-                }
+                handleDisconnectionWhenAppNotInForeground()
             }
         }
     }
 
     private fun handleDisconnectionWhenAppNotInForeground() {
         // Always stop playback when AA disconnects, regardless of user-initiated status
+        // does not seem to be working when app has not previously been opened, and AA naturally disconnects.
         Log.d("MediaService", "AA disconnected or App process stopped - stopping all playback")
         player.pause()
+        player.playWhenReady = false
         updateCurrentEpisodeProgress()
 
         // Stop playback completely when AA disconnects
         player.stop()
-        player.clearMediaItems()
 
         // Schedule service to stop after a delay if still not needed
         serviceScope.launch {
             delay(30000) // 30 seconds grace period
-            Log.d("MediaService", "Stopping process")
             if (!isAndroidAutoConnected && !isAppInForeground) {
+                Log.d("MediaService", "Stopping process")
                 stopSelf()
             }
         }
     }
 
-    // Check when the app is in foreground or not. Primarily used to prevent audio playback when AA disconnects.
+    // Check when the app is in foreground or not.
     private fun handleAppForegroundState(isForeground: Boolean) {
+        Log.d("MediaService", "App in foreground: $isForeground")
         isAppInForeground = isForeground
     }
 
@@ -230,6 +230,7 @@ class MediaService : MediaLibraryService() {
                     Player.STATE_ENDED -> {
                         updateCurrentEpisodeProgress(markCompleted = true)
                     }
+                    else -> {}
                 }
             }
         }
