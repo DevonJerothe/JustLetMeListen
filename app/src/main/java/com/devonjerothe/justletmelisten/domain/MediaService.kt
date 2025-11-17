@@ -57,6 +57,7 @@ class MediaService : MediaLibraryService() {
     // Android Auto and app state tracking
     private var isAndroidAutoConnected = false
     private var isAppInForeground = false
+    private var wasAppManuallyOpened = false
 
     val commandList = listOf(
         CommandButton.Builder(
@@ -166,33 +167,42 @@ class MediaService : MediaLibraryService() {
             CarConnectionStatus.CONNECTED, CarConnectionStatus.CONNECTED_OS -> {
                 Log.d("MediaService", "Connected to Android Auto")
                 isAndroidAutoConnected = true
+                player.playWhenReady = true
             }
             CarConnectionStatus.NOT_CONNECTED, CarConnectionStatus.DISCONNECTED -> {
                 Log.d("MediaService", "Not connected to Android Auto")
                 isAndroidAutoConnected = false
+                player.playWhenReady = false
                 handleDisconnectionWhenAppNotInForeground()
             }
         }
     }
 
     private fun handleDisconnectionWhenAppNotInForeground() {
-        // Always stop playback when AA disconnects, regardless of user-initiated status
-        // does not seem to be working when app has not previously been opened, and AA naturally disconnects.
-        Log.d("MediaService", "AA disconnected or App process stopped - stopping all playback")
+        Log.d("MediaService", "AA disconnected - always pausing playback")
+        Log.d("MediaService", "Current player state - isPlaying: ${player.isPlaying}, playWhenReady: ${player.playWhenReady}")
+
+        // Always pause playback when AA disconnects
         player.pause()
         player.playWhenReady = false
         updateCurrentEpisodeProgress()
 
-        // Stop playback completely when AA disconnects
-        player.stop()
+        // Only stop completely and clear media if app was never manually opened
+        if (!wasAppManuallyOpened) {
+            Log.d("MediaService", "App was never manually opened - stopping and clearing media")
+            player.stop()
+            player.clearMediaItems()
 
-        // Schedule service to stop after a delay if still not needed
-        serviceScope.launch {
-            delay(30000) // 30 seconds grace period
-            if (!isAndroidAutoConnected && !isAppInForeground) {
-                Log.d("MediaService", "Stopping process")
-                stopSelf()
+            // Schedule service to stop after a delay if still not needed
+            serviceScope.launch {
+                delay(30000) // 30 seconds grace period
+                if (!isAndroidAutoConnected && !isAppInForeground) {
+                    Log.d("MediaService", "Stopping process")
+                    stopSelf()
+                }
             }
+        } else {
+            Log.d("MediaService", "App was manually opened - keeping media for potential resume")
         }
     }
 
@@ -200,6 +210,12 @@ class MediaService : MediaLibraryService() {
     private fun handleAppForegroundState(isForeground: Boolean) {
         Log.d("MediaService", "App in foreground: $isForeground")
         isAppInForeground = isForeground
+
+        // Track if app was ever manually opened by user
+        if (isForeground) {
+            wasAppManuallyOpened = true
+            Log.d("MediaService", "App was manually opened by user")
+        }
     }
 
     private val playerListener = object : Player.Listener {
@@ -266,7 +282,7 @@ class MediaService : MediaLibraryService() {
 
     private fun updateCurrentEpisodeProgress(markCompleted: Boolean = false) {
         val mediaItem = player.currentMediaItem ?: return
-        val episodeId = mediaItem.mediaId ?: return
+        val episodeId = mediaItem.mediaId
 
         val currentPosition = player.currentPosition
         val duration = player.duration
@@ -442,7 +458,6 @@ class MediaService : MediaLibraryService() {
                             val mediaItem = createMediaItem(episode)
                             player.setMediaItem(mediaItem)
                             player.prepare()
-                            player.playWhenReady = true
                         }
                     }
                 }
@@ -489,6 +504,7 @@ class MediaService : MediaLibraryService() {
                     .setExtras(Bundle().apply {
                         putFloat("episode_progress", episode.progress)
                     })
+                    .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .build()
             )

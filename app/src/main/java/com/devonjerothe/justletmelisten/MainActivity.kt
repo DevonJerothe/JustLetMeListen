@@ -1,7 +1,6 @@
 package com.devonjerothe.justletmelisten
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
 import com.devonjerothe.justletmelisten.core.navigation.NavigationController
 import com.devonjerothe.justletmelisten.core.navigation.PodcastNavGraph
-import com.devonjerothe.justletmelisten.domain.MediaService
 import com.devonjerothe.justletmelisten.presentation.theme.JustLetMeListenTheme
 import com.devonjerothe.justletmelisten.presentation.viewmodels.MediaPlayerUIState
 import com.devonjerothe.justletmelisten.presentation.viewmodels.MediaPlayerViewModel
@@ -37,10 +35,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Start MediaService (it will run independently and monitor app lifecycle)
-        val serviceIntent = Intent(this, MediaService::class.java)
-        startService(serviceIntent)
 
         setContent {
             JustLetMeListenTheme {
