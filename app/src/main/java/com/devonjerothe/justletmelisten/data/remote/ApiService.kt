@@ -1,5 +1,6 @@
 package com.devonjerothe.justletmelisten.data.remote
 
+import com.devonjerothe.justletmelisten.BuildConfig
 import com.prof18.rssparser.RssParser
 import com.prof18.rssparser.model.RssChannel
 import io.ktor.client.HttpClient
@@ -12,6 +13,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.headers
 import io.ktor.client.request.parameter
 import io.ktor.client.request.request
 import io.ktor.client.statement.HttpResponse
@@ -22,6 +24,7 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLProtocol
 import io.ktor.http.path
+import io.ktor.util.sha1
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -149,6 +152,63 @@ class ApiService {
             RssResult.Error(exception = ApiError.UnknownError(e.message ?: "Unknown error"))
         }
     }
+
+    /**
+     * Podcast Index API
+     * - We can use https://github.com/mr3y-the-programmer/PodcastIndex-SDK if we want a full
+     * migration to this API. For now we are just adding trending calls.
+     *
+     * TODO: support language selection
+     */
+    suspend fun getTrendingPodcasts(
+        category: String? = null
+    ): ApiResult<TrendingPodcasts> {
+        return try {
+            val response = client.request {
+                headers {
+                    val epochTime = (System.currentTimeMillis() / 1000)
+                    val apiKey = BuildConfig.PODCAST_INDEX_API_KEY
+                    val apiSecret = BuildConfig.PODCAST_INDEX_API_SECRET
+                    val authToken = createAuthToken(apiKey, apiSecret, epochTime.toString())
+
+                    append(HttpHeaders.UserAgent, "JustLetMeListen/1.0")
+                    append("X-Auth-Key", BuildConfig.PODCAST_INDEX_API_KEY)
+                    append("X-Auth-Date", epochTime.toString())
+                    append("Authorization", authToken)
+                }
+
+                url {
+                    protocol = URLProtocol.HTTPS
+                    host = "api.podcastindex.org"
+                    path("api/1.0/podcasts/trending")
+                    parameter("max", "10")
+                    parameter("lang", "en")
+                    category?.let { parameter("cat", it) }
+                }
+                this.method = HttpMethod.Get
+            }
+            // return success body
+            ApiResult.Success(response.body())
+        } catch (e: Exception) {
+            val error = when (e) {
+                is ResponseException -> ApiError.ServerError(
+                    e.response.status.value,
+                    e.response.status.description
+                )
+                is HttpRequestTimeoutException -> ApiError.Timeout
+                else -> ApiError.UnknownError(e.message ?: "Unknown error")
+            }
+            ApiResult.Error(error)
+        }
+    }
+
+    /**
+     * Creates the auth header value needed for PodcastIndex calls
+     */
+    private fun createAuthToken(apiKey: String, apiSecret: String, epoch: String): String {
+        val hash = sha1("$apiKey:$apiSecret:$epoch".toByteArray())
+        return hash.toHexString()
+    }
 }
 
 /**
@@ -194,4 +254,29 @@ data class SearchResult(
     val artworkUrl600: String? = null,
     val genreIds: List<String>? = null,
     val genres: List<String>? = null
+)
+
+@Serializable
+data class TrendingPodcasts(
+    val status: String,
+    val count: Int,
+    val max: Int?,
+    val since: Int?,
+    val description: String,
+    val feeds: List<TrendingPodcast>
+)
+
+@Serializable
+data class TrendingPodcast(
+    val id: Int,
+    val url: String,
+    val title: String,
+    val description: String,
+    val author: String,
+    val image: String,
+    val artwork: String,
+    val newestItemPublishTime: Int,
+    val itunesId: Int?,
+    val trendScore: Int,
+    val language: String
 )

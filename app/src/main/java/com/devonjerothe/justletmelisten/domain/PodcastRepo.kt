@@ -13,6 +13,7 @@ import com.devonjerothe.justletmelisten.data.remote.ApiResult
 import com.devonjerothe.justletmelisten.data.remote.ApiService
 import com.devonjerothe.justletmelisten.data.remote.RssResult
 import com.devonjerothe.justletmelisten.data.remote.SearchResponse
+import com.devonjerothe.justletmelisten.data.remote.TrendingPodcasts
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -24,6 +25,11 @@ class PodcastRepo(
     suspend fun searchPodcasts(query: String): ApiResult<SearchResponse> {
         // TODO: Handle DB Search
         val response = apiService.searchPodcasts(query)
+        return response
+    }
+
+    suspend fun getTrendingPodcasts(): ApiResult<TrendingPodcasts> {
+        val response = apiService.getTrendingPodcasts()
         return response
     }
 

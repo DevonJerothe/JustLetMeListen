@@ -1,5 +1,5 @@
 [versions]
-agp = "8.13.0"
+agp = "8.13.1"
 app = "1.7.0"
 coilCompose = "2.7.0"
 datastore = "1.1.7"

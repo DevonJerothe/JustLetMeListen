@@ -6,10 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.devonjerothe.justletmelisten.data.remote.ApiError
 import com.devonjerothe.justletmelisten.data.remote.ApiResult
 import com.devonjerothe.justletmelisten.data.remote.SearchResult
+import com.devonjerothe.justletmelisten.data.remote.TrendingPodcast
 import com.devonjerothe.justletmelisten.domain.PodcastRepo
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed interface SearchPodcastUIState {
@@ -19,6 +23,12 @@ sealed interface SearchPodcastUIState {
     data object Initial : SearchPodcastUIState
 }
 
+sealed interface TrendingPodcastUIState {
+    data class Success(val trendingPodcasts: List<TrendingPodcast>) : TrendingPodcastUIState
+    data class Error(val message: String) : TrendingPodcastUIState
+    data object Loading : TrendingPodcastUIState
+}
+
 class PodcastSearchViewModel(
     savedStateHandle: SavedStateHandle,
     private val podcastRepo: PodcastRepo
@@ -26,6 +36,17 @@ class PodcastSearchViewModel(
 
     private val _uiState = MutableStateFlow<SearchPodcastUIState>(SearchPodcastUIState.Initial)
     val uiState: StateFlow<SearchPodcastUIState> = _uiState.asStateFlow()
+
+    private val _trendingUiState = MutableStateFlow<TrendingPodcastUIState>(TrendingPodcastUIState.Loading)
+    val trendingUiState: StateFlow<TrendingPodcastUIState> = _trendingUiState
+        .onStart {
+            getTrendingPodcasts()
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = TrendingPodcastUIState.Loading
+        )
 
     fun searchPodcasts(query: String) {
         if (query.isBlank()) {
@@ -45,10 +66,31 @@ class PodcastSearchViewModel(
                         is ApiError.NetworkError -> "Network Error"
                         is ApiError.ServerError -> "Server Error: ${response.exception.code}"
                         is ApiError.UnknownError -> response.exception.message
-                        ApiError.SerializationError -> "Error Parsing Data"
-                        ApiError.Timeout -> "Request Timed Out"
+                        is ApiError.SerializationError -> "Error Parsing Data"
+                        is ApiError.Timeout -> "Request Timed Out"
                     }
                     SearchPodcastUIState.Error(message)
+                }
+            }
+        }
+    }
+
+    fun getTrendingPodcasts() {
+        viewModelScope.launch {
+            val response = podcastRepo.getTrendingPodcasts()
+            _trendingUiState.value = when (response) {
+                is ApiResult.Success -> {
+                    TrendingPodcastUIState.Success(response.data.feeds)
+                }
+                is ApiResult.Error -> {
+                    val message = when (response.exception) {
+                        is ApiError.NetworkError -> "Network Error"
+                        is ApiError.ServerError -> "Server Error: ${response.exception.code}"
+                        is ApiError.UnknownError -> response.exception.message
+                        is ApiError.SerializationError -> "Error Parsing Data"
+                        is ApiError.Timeout -> "Request Timed Out"
+                    }
+                    TrendingPodcastUIState.Error(message)
                 }
             }
         }
