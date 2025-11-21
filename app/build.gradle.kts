@@ -28,15 +28,28 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        val podcastIndexApiKey = localProperties.getProperty("PODCAST_INDEX_API_KEY") ?: ""
-        val podcastIndexApiSecret = localProperties.getProperty("PODCAST_INDEX_API_SECRET") ?: ""
+        val podcastIndexApiKey = localProperties.getProperty("PODCAST_INDEX_API_KEY") ?: System.getenv("PODCAST_INDEX_API_KEY") ?: ""
+        val podcastIndexApiSecret = localProperties.getProperty("PODCAST_INDEX_API_SECRET") ?: System.getenv("PODCAST_INDEX_API_SECRET") ?: ""
         buildConfigField("String", "PODCAST_INDEX_API_KEY", "\"$podcastIndexApiKey\"")
         buildConfigField("String", "PODCAST_INDEX_API_SECRET", "\"$podcastIndexApiSecret\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystoreFilePath = System.getenv("KEYSTORE_FILE")
+            if (keystoreFilePath != null) {
+                storeFile = file(keystoreFilePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
