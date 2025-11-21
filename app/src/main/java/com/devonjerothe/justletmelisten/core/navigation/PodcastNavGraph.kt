@@ -59,7 +59,7 @@ fun PodcastNavGraph(
             )
         }
         composable(
-            "${PODCAST_DETAILS}?${TRACK_ID}={${TRACK_ID}}&${FEED_URL}={${FEED_URL}}?",
+            "${PODCAST_DETAILS}?${TRACK_ID}={${TRACK_ID}}&${FEED_URL}={${FEED_URL}}",
             arguments = listOf(
                 navArgument(TRACK_ID) {
                     type = NavType.LongType
