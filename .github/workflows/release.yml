@@ -1,0 +1,79 @@
+name: Android Release
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Extract Version Information
+        id: version_info
+        run: |
+          VERSION_NAME=$(grep 'versionName =' app/build.gradle.kts | sed 's/.*versionName = "\(.*\)"/\1/')
+          VERSION_CODE=$(grep 'versionCode =' app/build.gradle.kts | sed 's/.*versionCode = \([0-9]*\)/\1/')
+          
+          TAG_NAME="v${VERSION_NAME}"
+          
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          
+          echo "Detected: Name=$VERSION_NAME, Code=$VERSION_CODE"
+          echo "Target Tag: $TAG_NAME"
+
+      - name: Check if Tag Exists
+        run: |
+          if git show-ref --tags --verify --quiet "refs/tags/$TAG_NAME"; then
+            echo "Error: Tag $TAG_NAME already exists."
+            echo "Please bump versionName in app/build.gradle.kts"
+            exit 1
+          fi
+
+      - name: Decode Keystore
+        env:
+          ENCODED_STRING: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo $ENCODED_STRING | base64 -di > release.jks
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        env:
+          PODCAST_INDEX_API_KEY: ${{ secrets.PODCAST_INDEX_API_KEY }}
+          PODCAST_INDEX_API_SECRET: ${{ secrets.PODCAST_INDEX_API_SECRET }}
+          KEYSTORE_FILE: ${{ github.workspace }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
+
+      - name: APK Name
+        run: mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/JustLetMeListen-${{ env.VERSION_NAME }}.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: Release ${{ env.VERSION_NAME }} (Code ${{ env.VERSION_CODE }})
+          body: |
+            Automated release for version ${{ env.VERSION_NAME }}.
+            Version Code: ${{ env.VERSION_CODE }}
+            Commit: ${{ github.sha }}
+          files: app/build/outputs/apk/release/JustLetMeListen-${{ env.VERSION_NAME }}.apk
+          draft: false
+          prerelease: false
+          make_latest: true
