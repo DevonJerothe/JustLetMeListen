@@ -46,10 +46,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.devonjerothe.justletmelisten.core.navigation.NavigationController
-import com.devonjerothe.justletmelisten.data.remote.SearchResult
+import com.devonjerothe.justletmelisten.domain.models.PodcastSearchModel
+import com.devonjerothe.justletmelisten.presentation.viewmodels.PodcastSearchUiState
 import com.devonjerothe.justletmelisten.presentation.viewmodels.PodcastSearchViewModel
-import com.devonjerothe.justletmelisten.presentation.viewmodels.SearchPodcastUIState
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,9 +63,9 @@ fun SearchScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Search Podcasts" ) },
+                title = { Text("Search Podcasts") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.navController.popBackStack() } ) {
+                    IconButton(onClick = { navController.navController.popBackStack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -76,68 +75,100 @@ fun SearchScreen(
             )
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier.padding(innerPadding)
-        )  {
+        Column(modifier = Modifier.padding(innerPadding)) {
             SearchBar(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it },
                 onSearch = { viewModel.searchPodcasts(searchQuery) },
-                onClear = { searchQuery = "" }
+                onClear = {
+                    searchQuery = ""
+                    viewModel.clearSearch()
+                }
             )
 
             when (val state = uiState) {
-                is SearchPodcastUIState.Loading -> {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        CircularProgressIndicator()
-                    }
-                }
-                is SearchPodcastUIState.Success -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = bottomPadding,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        item {
-                            Text(
-                                text = "Search Results",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-                        items(state.searchResults) { podcast ->
-                            PodcastItem(
-                                podcast = podcast
-                            ) {
-                                podcast.feedUrl?.let {
-                                    navController.navigateToDetails(
-                                        podcast.feedUrl,
-                                        podcast.trackId
-                                    )
-                                }
+                is PodcastSearchUiState.Popular -> {
+                    if (state.isLoading) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) { CircularProgressIndicator() }
+                    } else if (state.error != null) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) { Text(text = state.error) }
+                    } else {
+                        ResultListView(
+                            podcasts = state.items,
+                            listTitle = "Popular",
+                            contentPadding = bottomPadding,
+                            onPodcastClick = { podcast ->
+                                navController.navigateToDetails(
+                                    feedUrl = podcast.feedUrl,
+                                    trackId = podcast.trackId
+                                )
                             }
-                        }
+                        )
                     }
                 }
-                is SearchPodcastUIState.Error -> {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        Text(text = state.message)
-                    }
-                }
-                is SearchPodcastUIState.Initial -> {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        Text(text = "Lets find your podcasts!")
+
+                is PodcastSearchUiState.SearchResults -> {
+                    if (state.isLoading) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) { CircularProgressIndicator() }
+                    } else if (state.error != null) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) { Text(text = state.error) }
+                    } else {
+                        ResultListView(
+                            podcasts = state.items,
+                            listTitle = "Search Results",
+                            contentPadding = bottomPadding,
+                            onPodcastClick = { podcast ->
+                                navController.navigateToDetails(
+                                    feedUrl = podcast.feedUrl,
+                                    trackId = podcast.trackId
+                                )
+                            }
+                        )
                     }
                 }
             }
         }
     }
+}
 
+@Composable
+fun ResultListView(
+    podcasts: List<PodcastSearchModel>,
+    listTitle: String,
+    contentPadding: PaddingValues,
+    onPodcastClick: (PodcastSearchModel) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Text(
+                text = listTitle,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
+        items(podcasts) { podcast ->
+            PodcastItem(
+                podcast = podcast,
+                onTap = { onPodcastClick(podcast) }
+            )
+        }
+    }
 }
 
 @Composable
@@ -155,59 +186,50 @@ fun SearchBar(
             .padding(16.dp),
         placeholder = { Text("Search...") },
         leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = "Search"
-            )
+            Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
         },
         trailingIcon = {
             if (query.isNotEmpty()) {
                 IconButton(onClick = onClear) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Clear"
-                    )
+                    Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
                 }
             }
         },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(
-            onSearch = { onSearch() }
-        )
+        keyboardActions = KeyboardActions(onSearch = { onSearch() })
     )
 }
 
 @Composable
-fun PodcastItem(
-    podcast: SearchResult,
-    onTap: () -> Unit
-) {
+fun PodcastItem(podcast: PodcastSearchModel, onTap: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onTap),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onTap)
+                .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(
-            model = podcast.artworkUrl600,
+            model = podcast.imageUrl,
             contentDescription = "Podcast cover art",
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(80.dp).clip(RoundedCornerShape(8.dp))
+            modifier = Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(8.dp))
         )
         Spacer(modifier = Modifier.width(16.dp))
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = podcast.collectionName,
+                text = podcast.title,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = podcast.artistName ?: "",
+                text = podcast.author,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,

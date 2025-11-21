@@ -1,5 +1,13 @@
 package com.devonjerothe.justletmelisten.data.remote
 
+import android.util.Log
+import com.devonjerothe.justletmelisten.BuildConfig
+import com.devonjerothe.justletmelisten.data.remote.itunes.ItunesTopPodcast
+import com.devonjerothe.justletmelisten.data.remote.itunes.ItunesTopPodcastResponse
+import com.devonjerothe.justletmelisten.data.remote.itunes.toPodcastList
+import com.devonjerothe.justletmelisten.data.remote.itunes.ItunesSearchResponse
+import com.devonjerothe.justletmelisten.data.remote.itunes.ItunesPodcast
+import com.devonjerothe.justletmelisten.data.remote.podcastIndex.PodcastIndexTrendingList
 import com.prof18.rssparser.RssParser
 import com.prof18.rssparser.model.RssChannel
 import io.ktor.client.HttpClient
@@ -12,6 +20,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.headers
 import io.ktor.client.request.parameter
 import io.ktor.client.request.request
 import io.ktor.client.statement.HttpResponse
@@ -21,9 +30,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLProtocol
+import io.ktor.http.appendPathSegments
 import io.ktor.http.path
+import io.ktor.util.sha1
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 sealed class ApiResult<out T> {
@@ -60,6 +70,13 @@ class ApiService {
                     prettyPrint = true
                     isLenient = true
                     ignoreUnknownKeys = true
+                }
+            )
+            json(
+                Json {
+                    prettyPrint = true
+                    isLenient = true
+                    ignoreUnknownKeys = true
                 },
                 contentType = ContentType("text", "javascript")
             )
@@ -85,7 +102,7 @@ class ApiService {
     suspend fun searchPodcasts(
         query: String,
         limit: Int = 25
-    ): ApiResult<SearchResponse> {
+    ): ApiResult<ItunesSearchResponse> {
         return try {
             val response = client.request {
                 url {
@@ -106,6 +123,69 @@ class ApiService {
                     e.response.status.description
                 )
                 // is SerializationException -> ApiError.SerializationError // This is specific to kotlinx.serialization
+                is HttpRequestTimeoutException -> ApiError.Timeout
+                else -> ApiError.UnknownError(e.message ?: "Unknown error")
+            }
+            ApiResult.Error(error)
+        }
+    }
+
+    suspend fun getPodcast(
+        id: String
+    ): ApiResult<ItunesPodcast?> {
+        return try {
+            val response = client.request {
+                url {
+                    protocol = URLProtocol.HTTPS
+                    host = "itunes.apple.com"
+                    path("lookup")
+                    parameter("id", id)
+                }
+            }.body<ItunesSearchResponse>()
+
+            val podcast = response.results.firstOrNull()
+            ApiResult.Success(podcast)
+        } catch (e: Exception) {
+            val error = when (e) {
+                is ResponseException -> ApiError.ServerError(
+                    e.response.status.value,
+                    e.response.status.description
+                )
+                is HttpRequestTimeoutException -> ApiError.Timeout
+                else -> ApiError.UnknownError(e.message ?: "Unknown error")
+            }
+            ApiResult.Error(error)
+        }
+    }
+
+    suspend fun getPopularPodcasts(
+        country: String = "US"
+    ): ApiResult<List<ItunesTopPodcast>> {
+        return try {
+            val response = client.request {
+                url {
+                    protocol = URLProtocol.HTTPS
+                    host = "itunes.apple.com"
+                    appendPathSegments(
+                        country,
+                        "rss",
+                        "toppodcasts",
+                        "limit=15",
+                        "explicit=true",
+                        "json"
+                    )
+                }
+                this.method = HttpMethod.Get
+            }.body<ItunesTopPodcastResponse>()
+
+            val podcasts = response.toPodcastList()
+            ApiResult.Success(podcasts)
+        } catch (e: Exception) {
+            val error = when (e) {
+                is ResponseException -> ApiError.ServerError(
+                    e.response.status.value,
+                    e.response.status.description
+                )
                 is HttpRequestTimeoutException -> ApiError.Timeout
                 else -> ApiError.UnknownError(e.message ?: "Unknown error")
             }
@@ -149,49 +229,66 @@ class ApiService {
             RssResult.Error(exception = ApiError.UnknownError(e.message ?: "Unknown error"))
         }
     }
+
+    /**
+     * Podcast Index API
+     * - We can use https://github.com/mr3y-the-programmer/PodcastIndex-SDK if we want a full
+     * migration to this API. For now we are just adding trending calls.
+     *
+     * TODO: support language selection
+     */
+    suspend fun getTrendingPodcasts(
+        category: String? = "16"
+    ): ApiResult<PodcastIndexTrendingList> {
+        return try {
+            val epochTime = (System.currentTimeMillis() / 1000)
+            val response = client.request {
+                headers {
+                    val apiKey = BuildConfig.PODCAST_INDEX_API_KEY
+                    val apiSecret = BuildConfig.PODCAST_INDEX_API_SECRET
+                    val authToken = createAuthToken(apiKey, apiSecret, epochTime.toString())
+
+                    Log.d("APIService", "pod index auth key: $apiKey")
+                    Log.d("APIService", "pod index auth secret: $apiSecret")
+                    Log.d("APIService", "pod index auth token: $authToken")
+
+                    append(HttpHeaders.UserAgent, "JustLetMeListen/1.0")
+                    append("X-Auth-Key", apiKey)
+                    append("X-Auth-Date", epochTime.toString())
+                    append("Authorization", authToken)
+                }
+
+                url {
+                    protocol = URLProtocol.HTTPS
+                    host = "api.podcastindex.org"
+                    path("api/1.0/podcasts/trending")
+                    parameter("since", epochTime - 1000000)
+                    parameter("max", "10")
+                    parameter("lang", "en")
+                    category?.let { parameter("cat", it) }
+                }
+                this.method = HttpMethod.Get
+            }
+            // return success body
+            ApiResult.Success(response.body())
+        } catch (e: Exception) {
+            val error = when (e) {
+                is ResponseException -> ApiError.ServerError(
+                    e.response.status.value,
+                    e.response.status.description
+                )
+                is HttpRequestTimeoutException -> ApiError.Timeout
+                else -> ApiError.UnknownError(e.message ?: "Unknown error")
+            }
+            ApiResult.Error(error)
+        }
+    }
+
+    /**
+     * Creates the auth header value needed for PodcastIndex calls
+     */
+    private fun createAuthToken(apiKey: String, apiSecret: String, epoch: String): String {
+        val hash = sha1("$apiKey$apiSecret$epoch".toByteArray())
+        return hash.toHexString()
+    }
 }
-
-/**
- * Simple response data for search results
- */
-@Serializable
-data class SearchResponse(
-    val resultCount: Int,
-    val results: List<SearchResult>
-)
-
-@Serializable
-data class SearchResult(
-    val wrapperType: String? = null,
-    val kind: String? = null,
-    val artistId: Long? = null,
-    val collectionId: Long,
-    val trackId: Long,
-    val artistName: String? = null,
-    val collectionName: String,
-    val trackName: String,
-    val collectionCensoredName: String? = null,
-    val trackCensoredName: String? = null,
-    val artistViewUrl: String? = null,
-    val collectionViewUrl: String? = null,
-    val feedUrl: String? = null,
-    val trackViewUrl: String? = null,
-    val artworkUrl30: String? = null,
-    val artworkUrl60: String? = null,
-    val artworkUrl100: String? = null,
-    val collectionPrice: Double? = null,
-    val trackPrice: Double? = null,
-    val collectionHdPrice: Double? = null,
-    val releaseDate: String? = null, // You might want to parse this to a Date object later
-    val collectionExplicitness: String? = null,
-    val trackExplicitness: String? = null,
-    val trackCount: Int? = null,
-    val trackTimeMillis: Long? = null,
-    val country: String? = null,
-    val currency: String? = null,
-    val primaryGenreName: String? = null,
-    val contentAdvisoryRating: String? = null,
-    val artworkUrl600: String? = null,
-    val genreIds: List<String>? = null,
-    val genres: List<String>? = null
-)

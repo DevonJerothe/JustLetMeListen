@@ -1,5 +1,5 @@
 [versions]
-agp = "8.13.0"
+agp = "8.13.1"
 app = "1.7.0"
 coilCompose = "2.7.0"
 datastore = "1.1.7"
@@ -24,6 +24,7 @@ navigationCompose = "2.9.3"
 roomRuntime = "2.7.2"
 rssparser = "6.0.12"
 wavySlider = "2.1.0"
+places = "5.1.1"
 
 [libraries]
 androidx-app = { module = "androidx.car.app:app", version.ref = "app" }
@@ -64,6 +65,7 @@ ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "kto
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktorSerializationKotlinxJson" }
 rssparser = { module = "com.prof18.rssparser:rssparser", version.ref = "rssparser" }
 wavy-slider = { module = "ir.mahozad.multiplatform:wavy-slider", version.ref = "wavySlider" }
+places = { group = "com.google.android.libraries.places", name = "places", version.ref = "places" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

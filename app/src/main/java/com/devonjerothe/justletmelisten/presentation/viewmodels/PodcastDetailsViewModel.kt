@@ -38,6 +38,7 @@ class PodcastDetailsViewModel(
         URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
     }
 
+    // TrackID is used when navigating from search results.
     private val trackId = savedStateHandle.get<Long>(TRACK_ID)
     private var dbObserver: Job? = null
 
@@ -84,9 +85,18 @@ class PodcastDetailsViewModel(
                 podcast = podcastRepo.getPodcastByTrack(trackId)
             }
 
-            // Check if podcast is already in DB cache
+            /**
+             * If neither of the above pulled podcast info from the DB then it means we need to fetch
+             * from the API. In that case at the minimum trackID is required. TrackID is always
+             * passed from search results, but when looking at trending / popular we dont have
+             * feedURL
+             */
             if (podcast == null) {
-                val podcastDetails = podcastRepo.getPodcastFeed(feedUrl ?: "", trackId ?: 0)
+                var podcastDetails: PodcastWithEpisodes? = null
+                trackId?.let {
+                    podcastDetails = podcastRepo.getPodcastDetails(feedUrl = feedUrl, trackId = trackId)
+                }
+
                 if (podcastDetails != null) {
                     _uiState.value = PodcastDetailsUIState.Success(
                         podcast = podcastDetails.podcast,

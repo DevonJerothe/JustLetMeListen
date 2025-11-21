@@ -38,9 +38,16 @@ class NavigationController(val navController: NavHostController) : ViewModel() {
     fun navigateToDetails(podcastId: Long) {
         navController.navigate("$PODCAST_DETAILS?$PODCAST_ID=$podcastId")
     }
-    fun navigateToDetails(feedUrl: String, trackId: Long) {
+    fun navigateToDetails(feedUrl: String?, trackId: Long) {
+
+        var route = "$PODCAST_DETAILS?$TRACK_ID=$trackId"
+
+        feedUrl?.let {
+            val encodedUrl = URLEncoder.encode(feedUrl, StandardCharsets.UTF_8.toString())
+            route += "&$FEED_URL=$encodedUrl"
+        }
+
         // encode URL
-        val encodedUrl = URLEncoder.encode(feedUrl, StandardCharsets.UTF_8.toString())
-        navController.navigate("$PODCAST_DETAILS?$FEED_URL=$encodedUrl?$TRACK_ID=$trackId")
+        navController.navigate(route)
     }
 }

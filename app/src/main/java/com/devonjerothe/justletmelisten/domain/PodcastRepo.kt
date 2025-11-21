@@ -11,8 +11,10 @@ import com.devonjerothe.justletmelisten.data.local.Podcast
 import com.devonjerothe.justletmelisten.data.local.PodcastWithEpisodes
 import com.devonjerothe.justletmelisten.data.remote.ApiResult
 import com.devonjerothe.justletmelisten.data.remote.ApiService
+import com.devonjerothe.justletmelisten.data.remote.itunes.ItunesTopPodcast
 import com.devonjerothe.justletmelisten.data.remote.RssResult
-import com.devonjerothe.justletmelisten.data.remote.SearchResponse
+import com.devonjerothe.justletmelisten.data.remote.itunes.ItunesSearchResponse
+import com.devonjerothe.justletmelisten.data.remote.podcastIndex.PodcastIndexTrendingList
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -21,9 +23,19 @@ class PodcastRepo(
     private val episodeDao: EpisodeDao,
     private val apiService: ApiService
 ) {
-    suspend fun searchPodcasts(query: String): ApiResult<SearchResponse> {
+    suspend fun searchPodcasts(query: String): ApiResult<ItunesSearchResponse> {
         // TODO: Handle DB Search
         val response = apiService.searchPodcasts(query)
+        return response
+    }
+
+    suspend fun getTrendingPodcasts(): ApiResult<PodcastIndexTrendingList> {
+        val response = apiService.getTrendingPodcasts()
+        return response
+    }
+
+    suspend fun getPopularPodcasts(): ApiResult<List<ItunesTopPodcast>> {
+        val response = apiService.getPopularPodcasts()
         return response
     }
 
@@ -147,9 +159,7 @@ class PodcastRepo(
     }
 
     suspend fun getPodcastFeed(feedUrl: String, trackId: Long): PodcastWithEpisodes? {
-        val response = apiService.getPodcastEpisodes(feedUrl)
-
-        when (response) {
+        when (val response = apiService.getPodcastEpisodes(feedUrl)) {
             is RssResult.Success -> {
                 val episodes = response.channel.items
 
@@ -199,4 +209,26 @@ class PodcastRepo(
             }
         }
     }
+
+    // Used for fetching podcast feed from searchResults or `ItunesTopPodcast`
+    suspend fun getPodcastDetails(feedUrl: String?, trackId: Long): PodcastWithEpisodes? {
+        // if we already have the feedURL we can skip to that
+        feedUrl?.let {
+            return getPodcastFeed(it, trackId)
+        }
+
+        when (val response = apiService.getPodcast(trackId.toString())) {
+            is ApiResult.Success -> {
+                val podcast = response.data
+                val feedUrl = podcast?.feedUrl ?: return null
+
+                return getPodcastFeed(feedUrl, podcast.trackId)
+            }
+            is ApiResult.Error -> {
+                // TODO: Handle error
+                return null
+            }
+        }
+    }
+
 }
